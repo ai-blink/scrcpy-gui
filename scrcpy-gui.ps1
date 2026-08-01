@@ -1,0 +1,1033 @@
+# =============================================================
+#  scrcpy 설정 GUI  v0.1.0-beta   (Windows / PowerShell 7 + WPF)
+#  https://github.com/ai-blink/scrcpy-gui                MIT License
+#
+#  ★ 옵션을 추가/변경하려면 아래 $OPTIONS 표에 한 줄만 넣으면 됩니다.
+#    화면은 이 표를 읽어서 자동으로 만들어집니다.
+#
+#    Group : 왼쪽 메뉴 어디에 넣을지 (없는 이름을 쓰면 메뉴가 새로 생김)
+#    Key   : 고유 이름 (프리셋 저장용, 겹치지만 않으면 됨)
+#    Label : 화면에 보일 이름
+#    Type  : check(토글) / text(입력칸) / combo(선택목록)
+#    Arg   : scrcpy에 넘길 인자.  text·combo는 {0} 자리에 값이 들어감
+#    Items : combo일 때 목록.  '(기본)' 을 고르면 그 옵션은 안 붙음
+#    Hint  : 오른쪽에 회색으로 보이는 설명
+# =============================================================
+
+# 설정 파일은 항상 이 스크립트 옆에 둔다 (저장소에서 돌리든 배포본에서 돌리든 일관)
+$PRESET_FILE = Join-Path $PSScriptRoot 'scrcpy-gui-presets.json'
+$LAST_FILE   = Join-Path $PSScriptRoot 'scrcpy-gui-last.json'   # 창 닫을 때 현재 값 자동 저장 → 다음에 켜면 복원
+$CONFIG_FILE = Join-Path $PSScriptRoot 'scrcpy-gui-config.json' # scrcpy·adb 실행 파일 위치 (PC마다 다름)
+
+# =============================================================
+#  실행 파일 찾기 — PC 마다 설치 위치가 달라서 순서대로 뒤진다.
+#   ① config 에 저장된 경로 (설정 탭에서 직접 지정한 것)
+#   ② 이 스크립트와 같은 폴더 (scrcpy 폴더에 통째로 넣어 쓰는 경우)
+#   ③ PATH
+#   ④ 흔한 설치 위치 (winget / scoop / chocolatey / Program Files / Downloads / C:\app)
+#  넷 다 실패하면 GUI 는 그대로 뜨고, '설정' 탭에서 직접 지정하도록 안내한다.
+# =============================================================
+
+function Read-Config {
+    if (Test-Path $CONFIG_FILE) {
+        try { return Get-Content $CONFIG_FILE -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable } catch { }
+    }
+    return @{}
+}
+
+function Write-Config {
+    param($Config)
+    try { $Config | ConvertTo-Json -Depth 5 | Set-Content -Path $CONFIG_FILE -Encoding UTF8 } catch { }
+}
+
+function Get-ExeCandidates {
+    param([string]$Name, [string[]]$Globs)
+    $list = [System.Collections.Generic.List[string]]::new()
+
+    $side = Join-Path $PSScriptRoot "$Name.exe"
+    if (Test-Path $side) { $list.Add($side) }
+
+    $onPath = (Get-Command $Name -ErrorAction SilentlyContinue).Source
+    if ($onPath) { $list.Add($onPath) }
+
+    foreach ($g in $Globs) {
+        if (-not $g) { continue }
+        foreach ($hit in (Get-ChildItem -Path $g -ErrorAction SilentlyContinue |
+                          Sort-Object LastWriteTime -Descending | Select-Object -First 3)) {
+            $list.Add($hit.FullName)
+        }
+    }
+    return ($list | Select-Object -Unique | Select-Object -First 8)
+}
+
+function Get-ScrcpyVersion {
+    param([string]$Path)
+    try {
+        $line = & $Path --version 2>$null | Select-Object -First 1
+        if ($line -match 'scrcpy\s+(\d+)\.(\d+)(?:\.(\d+))?') {
+            $patch = if ($Matches[3]) { [int]$Matches[3] } else { 0 }
+            return [version]::new([int]$Matches[1], [int]$Matches[2], $patch)
+        }
+    } catch { }
+    return $null
+}
+
+# ⚠️ 순서로 고르면 안 된다 — 구버전이 PATH 에 남아 있는 경우가 흔하다(실측: PATH=3.3.2, 옆에 4.1).
+#    후보를 전부 모아 **버전이 가장 높은 것**을 고른다. 사람이 직접 지정한 경로는 그대로 존중.
+function Find-Scrcpy {
+    param([string]$ConfigValue, [string[]]$Globs)
+    if ($ConfigValue -and (Test-Path $ConfigValue)) { return $ConfigValue }
+
+    $cands = Get-ExeCandidates -Name 'scrcpy' -Globs $Globs
+    if (-not $cands) { return $null }
+
+    $best = $null; $bestVer = $null
+    foreach ($c in $cands) {
+        $v = Get-ScrcpyVersion $c
+        if ($v -and (-not $bestVer -or $v -gt $bestVer)) { $best = $c; $bestVer = $v }
+    }
+    if ($best) { return $best }
+    return @($cands)[0]
+}
+
+function Find-Adb {
+    param([string]$ConfigValue, [string[]]$Globs)
+    if ($ConfigValue -and (Test-Path $ConfigValue)) { return $ConfigValue }
+    $cands = Get-ExeCandidates -Name 'adb' -Globs $Globs
+    if ($cands) { return @($cands)[0] }   # adb 는 하위호환이라 버전 비교 불필요
+    return $null
+}
+
+$script:Config = Read-Config
+
+$SCRCPY_GLOBS = @(
+    "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Genymobile.scrcpy*\*\scrcpy.exe"
+    "$env:USERPROFILE\scoop\apps\scrcpy\current\scrcpy.exe"
+    "C:\ProgramData\chocolatey\lib\scrcpy\tools\*\scrcpy.exe"
+    "$env:ProgramFiles\scrcpy*\scrcpy.exe"
+    "${env:ProgramFiles(x86)}\scrcpy*\scrcpy.exe"
+    "C:\app\scrcpy*\scrcpy.exe"
+    "$env:USERPROFILE\Downloads\scrcpy*\scrcpy.exe"
+    "$env:USERPROFILE\Desktop\scrcpy*\scrcpy.exe"
+)
+$SCRCPY_EXE = Find-Scrcpy -ConfigValue $script:Config.scrcpyPath -Globs $SCRCPY_GLOBS
+$SCRCPY_DIR = if ($SCRCPY_EXE) { Split-Path $SCRCPY_EXE -Parent } else { $PSScriptRoot }
+$SCRCPY_VER = if ($SCRCPY_EXE) { Get-ScrcpyVersion $SCRCPY_EXE } else { $null }
+
+# adb 는 scrcpy 공식 배포판에 같이 들어 있는 경우가 많아 scrcpy 폴더를 먼저 본다.
+$ADB_GLOBS = @(
+    $(if ($SCRCPY_DIR) { Join-Path $SCRCPY_DIR 'adb.exe' })
+    "C:\app\adb\adb.exe"
+    "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+    "$env:ProgramFiles\Android\platform-tools\adb.exe"
+    "$env:USERPROFILE\scoop\apps\adb\current\adb.exe"
+    "C:\ProgramData\chocolatey\lib\adb\tools\*\adb.exe"
+    "C:\app\scrcpy*\adb.exe"
+)
+$ADB_EXE = Find-Adb -ConfigValue $script:Config.adbPath -Globs $ADB_GLOBS
+if (-not $ADB_EXE) { $ADB_EXE = 'adb' }   # 마지막 수단: PATH 에 있길 기대
+
+$OPTIONS = @(
+    # ---------------- 화면 ----------------
+    @{ Group='화면'; Key='max-size';       Label='해상도 상한';   Type='editcombo'; Default='1850'; Items=@('(기본)','3088','2560','1920','1850','1600','1440','1280','1080','720'); Arg='--max-size={0}'; Hint='긴 변 픽셀 하나만 넣습니다 (비율은 폰에 맞춰 자동).  3088=원본 · 1920=FHD(1080x1920) · 1440=HD+(810x1440) · 1080=(607x1080)' },
+    @{ Group='화면'; Key='max-fps';        Label='최대 프레임';   Type='editcombo'; Default='120';  Items=@('(기본)','144','120','90','60','30'); Arg='--max-fps={0}'; Hint='높을수록 부드럽지만 데이터·발열 증가' },
+    @{ Group='화면'; Key='video-bit-rate'; Label='화질';          Type='editcombo'; Default='8M';   Items=@('(기본)','32M','16M','12M','8M','4M','2M'); Arg='--video-bit-rate={0}'; Hint='높을수록 선명하지만 지연·데이터 증가.  32M=최고 · 8M=기본 · 4M=가볍게' },
+    @{ Group='화면'; Key='video-codec';    Label='영상 코덱';     Type='combo'; Default='(기본)'; Items=@('(기본)','h264','h265','av1'); Arg='--video-codec={0}'; Hint='h265가 같은 화질에 데이터가 적음 (기기 지원 필요)' },
+    @{ Group='화면'; Key='orientation';    Label='화면 방향';     Type='combo'; Default='(기본)'; Items=@('(기본)','0','90','180','270','flip0','flip90','flip180','flip270'); Arg='--orientation={0}'; Hint='창에 보이는 방향만 회전' },
+    @{ Group='화면'; Key='crop';           Label='잘라내기';      Type='text';  Default='';     Arg='--crop={0}';           Hint='폭:높이:x:y   예) 1080:1080:0:420' },
+    @{ Group='화면'; Key='new-display';    Label='가로 화면 (16:9)'; Type='editcombo'; Default='(기본)'; Items=@('(기본)','1920x1080','1600x900','2560x1440','1280x720'); Arg='--new-display={0}'; Hint='폰과 별개인 가로 화면을 새로 만들어 띄웁니다. 폰 화면(19.3:9)처럼 길쭉하지 않음.  1920x1080 = 16:9' },
+
+    # ---------------- 창 ----------------
+    @{ Group='창';   Key='fullscreen';     Label='전체화면으로 시작'; Type='check'; Default=$false; Arg='--fullscreen';       Hint='실행 후 Ctrl+F 로도 전환 가능' },
+    @{ Group='창';   Key='always-on-top';  Label='항상 위에';     Type='check'; Default=$false; Arg='--always-on-top';      Hint='다른 창에 안 가려짐' },
+    @{ Group='창';   Key='borderless';     Label='테두리 없애기'; Type='check'; Default=$false; Arg='--window-borderless';  Hint='제목표시줄·테두리 제거' },
+    @{ Group='창';   Key='window-title';   Label='창 제목';       Type='text';  Default='';     Arg='--window-title={0}';   Hint='비우면 폰 모델명' },
+    @{ Group='창';   Key='window-width';   Label='창 너비';       Type='text';  Default='';     Arg='--window-width={0}';   Hint='픽셀. 비우면 자동' },
+    @{ Group='창';   Key='window-height';  Label='창 높이';       Type='text';  Default='';     Arg='--window-height={0}';  Hint='픽셀. 비우면 자동' },
+
+    # ---------------- 전원 ----------------
+    @{ Group='전원'; Key='turn-screen-off'; Label='폰 화면 끄고 쓰기'; Type='check'; Default=$false; Arg='--turn-screen-off'; Hint='폰 화면은 꺼두고 PC로만 조작 (배터리 절약)' },
+    @{ Group='전원'; Key='stay-awake';      Label='잠들지 않게';   Type='check'; Default=$false; Arg='--stay-awake';        Hint='충전 중일 때 폰이 안 잠김' },
+    @{ Group='전원'; Key='screen-off-timeout'; Label='화면 꺼짐 시간'; Type='text'; Default='500'; Arg='--screen-off-timeout={0}'; Hint='초 단위. scrcpy 실행 중에만 적용' },
+    @{ Group='전원'; Key='no-power-on';     Label='시작할 때 안 켜기'; Type='check'; Default=$false; Arg='--no-power-on';   Hint='실행해도 폰 화면을 깨우지 않음' },
+    @{ Group='전원'; Key='power-off-on-close'; Label='닫을 때 폰 화면 끄기'; Type='check'; Default=$false; Arg='--power-off-on-close'; Hint='창을 닫으면 폰도 화면 꺼짐' },
+    @{ Group='전원'; Key='disable-screensaver'; Label='PC 화면보호기 끄기'; Type='check'; Default=$false; Arg='--disable-screensaver'; Hint='보는 동안 PC가 안 잠김' },
+
+    # ---------------- 입력 ----------------
+    @{ Group='입력'; Key='keyboard';       Label='키보드 방식';   Type='combo'; Default='uhid';   Items=@('(기본)','uhid','aoa','sdk','disabled'); Arg='--keyboard={0}'; Hint='uhid = 한글 입력 됨.  한/영 전환은 입력칸에 커서를 놓고 Shift+Space.  폰 기본 키보드가 삼성 키보드여야 함' },
+    @{ Group='입력'; Key='mouse';          Label='마우스 방식';   Type='combo'; Default='(기본)'; Items=@('(기본)','uhid','aoa','sdk','disabled'); Arg='--mouse={0}';    Hint='uhid = 폰에 진짜 마우스 커서가 생김' },
+    @{ Group='입력'; Key='show-touches';   Label='터치 지점 표시'; Type='check'; Default=$false; Arg='--show-touches';      Hint='어디를 눌렀는지 폰 화면에 동그라미' },
+    @{ Group='입력'; Key='prefer-text';    Label='텍스트 입력 우선'; Type='check'; Default=$false; Arg='--prefer-text';     Hint='특수문자 입력이 이상할 때 시도' },
+    @{ Group='입력'; Key='no-key-repeat';  Label='키 반복 끄기';  Type='check'; Default=$false; Arg='--no-key-repeat';      Hint='키를 눌러도 반복 입력 안 됨' },
+    @{ Group='입력'; Key='no-control';     Label='보기 전용';     Type='check'; Default=$false; Arg='--no-control';         Hint='조작 없이 화면만 보기' },
+    # phonepref = scrcpy 옵션이 아니라 '폰 설정'을 직접 바꾸는 토글.
+    # 누르는 즉시 adb 로 폰에 반영되고, 명령어 미리보기·프리셋에는 들어가지 않는다.
+    @{ Group='입력'; Key='ime-with-hw';    Label='폰 화면 자판 표시'; Type='phonepref'; SettingNs='secure'; SettingKey='show_ime_with_hard_keyboard'; Hint='끄면 PC 키보드로 칠 때 폰 화면 자판이 안 뜹니다.  ※ 폰 설정을 직접 바꿉니다 (즉시 적용)' },
+
+    # ---------------- 소리 ----------------
+    @{ Group='소리'; Key='no-audio';       Label='소리 끄기';     Type='check'; Default=$false; Arg='--no-audio';           Hint='폰 소리를 PC로 안 보냄' },
+    @{ Group='소리'; Key='audio-codec';    Label='오디오 코덱';   Type='combo'; Default='(기본)'; Items=@('(기본)','opus','aac','flac','raw'); Arg='--audio-codec={0}'; Hint='기본은 opus' },
+    @{ Group='소리'; Key='audio-bit-rate'; Label='소리 비트레이트'; Type='text'; Default='';    Arg='--audio-bit-rate={0}'; Hint='예: 128K' },
+    @{ Group='소리'; Key='audio-source';   Label='소리 원본';     Type='combo'; Default='(기본)'; Items=@('(기본)','output','playback','mic'); Arg='--audio-source={0}'; Hint='mic = 폰 마이크를 PC로' },
+    @{ Group='소리'; Key='audio-dup';      Label='폰에서도 같이 재생'; Type='check'; Default=$false; Arg='--audio-dup';     Hint='기본은 PC로만 나오고 폰은 무음' },
+
+    # ---------------- 녹화 ----------------
+    @{ Group='녹화'; Key='record';         Label='녹화 파일';     Type='text';  Default='';     Arg='--record={0}';        Hint='예: C:\rec\phone.mp4   (비우면 녹화 안 함)' },
+    @{ Group='녹화'; Key='record-format';  Label='녹화 형식';     Type='combo'; Default='(기본)'; Items=@('(기본)','mp4','mkv','m4a','mka','opus','aac','flac','wav'); Arg='--record-format={0}'; Hint='보통 파일 확장자로 자동 결정' },
+    @{ Group='녹화'; Key='time-limit';     Label='자동 종료';     Type='text';  Default='';     Arg='--time-limit={0}';    Hint='초 단위. 예) 600 = 10분 뒤 종료' },
+    @{ Group='녹화'; Key='no-video-playback'; Label='영상 표시 안 함'; Type='check'; Default=$false; Arg='--no-video-playback'; Hint='녹화만 할 때 (창 안 뜸)' },
+
+    # ---------------- 기타 ----------------
+    @{ Group='기타'; Key='start-app';      Label='시작할 앱';     Type='text';  Default='';     Arg='--start-app={0}';     Hint='패키지명 또는 ?이름   예) ?카카오' },
+    @{ Group='기타'; Key='display-id';     Label='화면 번호';     Type='text';  Default='';     Arg='--display-id={0}';    Hint='여러 디스플레이가 있을 때' },
+    @{ Group='기타'; Key='render-driver';  Label='렌더러';        Type='combo'; Default='(기본)'; Items=@('(기본)','direct3d11','direct3d','opengl','opengles2','software'); Arg='--render-driver={0}'; Hint='화면이 깨질 때 바꿔보세요' },
+
+    # ---------------- 설정 (PC 마다 다른 값) ----------------
+    # path = 실행 파일 위치. 자동으로 못 찾았을 때만 손대면 된다. config.json 에 저장된다.
+    @{ Group='설정'; Key='scrcpyPath';     Label='scrcpy.exe 위치'; Type='path'; Hint='여러 버전이 깔려 있으면 가장 높은 버전을 자동으로 고릅니다. 직접 정하려면 [찾아보기]' },
+    @{ Group='설정'; Key='adbPath';        Label='adb.exe 위치';    Type='path'; Hint='scrcpy 폴더 안에 같이 들어있는 경우가 많습니다' }
+)
+
+# =============================================================
+#  아래부터는 화면 만드는 부분 — 옵션만 바꿀 거면 손댈 필요 없음
+# =============================================================
+
+# 이 스크립트를 띄운 검은 콘솔 창만 숨긴다 (GUI 창은 그대로 보임).
+# ※ 런처에서 pwsh -WindowStyle Hidden 을 쓰면 GUI 창까지 같이 숨겨진다(실측). 그래서 여기서 처리한다.
+$ConsoleWin = Add-Type -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+'@ -Name 'ConsoleWin' -Namespace 'Native' -PassThru
+$null = $ConsoleWin::ShowWindow($ConsoleWin::GetConsoleWindow(), 0)
+
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+
+[xml]$xamlDoc = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="scrcpy" Height="814" Width="1000"
+        WindowStartupLocation="CenterScreen"
+        Background="#1B1B1F" FontFamily="Segoe UI, 맑은 고딕" FontSize="13"
+        TextOptions.TextFormattingMode="Display">
+
+  <Window.Resources>
+
+    <!-- 스크롤바 : 얇은 다크 -->
+    <Style TargetType="ScrollBar">
+      <Setter Property="Width" Value="10"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Grid Background="Transparent">
+              <Track x:Name="PART_Track" IsDirectionReversed="True">
+                <Track.Thumb>
+                  <Thumb>
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Border Background="#43434B" CornerRadius="5" Margin="2,0"/>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/>
+                </Track.IncreaseRepeatButton>
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/>
+                </Track.DecreaseRepeatButton>
+              </Track>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- 입력칸  ※ Height 고정 = 옆 설명글이 길어져도 박스가 늘어나지 않게 -->
+    <Style x:Key="DarkText" TargetType="TextBox">
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Background" Value="#26262C"/>
+      <Setter Property="Foreground" Value="#E9E9EC"/>
+      <Setter Property="BorderBrush" Value="#3A3A42"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="10,0"/>
+      <Setter Property="CaretBrush" Value="#E9E9EC"/>
+      <Setter Property="SelectionBrush" Value="#2C6BD6"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#4C4C57"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#3D82F0"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- 명령어 미리보기 -->
+    <Style x:Key="CmdBox" TargetType="TextBox" BasedOn="{StaticResource DarkText}">
+      <Setter Property="Background" Value="#141418"/>
+      <Setter Property="Foreground" Value="#8FD9A8"/>
+      <Setter Property="FontFamily" Value="Consolas"/>
+      <Setter Property="FontSize" Value="12.5"/>
+      <Setter Property="IsReadOnly" Value="True"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="BorderBrush" Value="#2C2C34"/>
+      <Setter Property="Height" Value="Auto"/>
+      <Setter Property="VerticalAlignment" Value="Stretch"/>
+      <Setter Property="VerticalContentAlignment" Value="Top"/>
+      <Setter Property="Padding" Value="11,9"/>
+    </Style>
+
+    <!-- 선택목록 -->
+    <Style x:Key="ComboItem" TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="#D8D8DE"/>
+      <Setter Property="Padding" Value="10,7"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBoxItem">
+            <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}" CornerRadius="4" Margin="3,1">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#33333C"/>
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#2C4E86"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="DarkCombo" TargetType="ComboBox">
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="Foreground" Value="#E9E9EC"/>
+      <Setter Property="ItemContainerStyle" Value="{StaticResource ComboItem}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <ToggleButton x:Name="Tgl" Focusable="False" ClickMode="Press"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Bd" Background="#26262C" BorderBrush="#3A3A42" BorderThickness="1" CornerRadius="7">
+                      <Path HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"
+                            Data="M 0 0 L 5 5 L 10 0" Stroke="#9A9AA4" StrokeThickness="1.5"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="BorderBrush" Value="#4C4C57"/>
+                      </Trigger>
+                      <Trigger Property="IsChecked" Value="True">
+                        <Setter TargetName="Bd" Property="BorderBrush" Value="#3D82F0"/>
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <ContentPresenter IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}"
+                                Margin="12,0,32,0" VerticalAlignment="Center"
+                                TextBlock.Foreground="#E9E9EC"/>
+              <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True"
+                     Focusable="False" PopupAnimation="Fade">
+                <Border Background="#26262C" BorderBrush="#3A3A42" BorderThickness="1" CornerRadius="7"
+                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                        Margin="0,4,0,0" Padding="0,4">
+                  <ScrollViewer MaxHeight="280">
+                    <StackPanel IsItemsHost="True"/>
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- 선택목록 + 직접입력 (해상도·프레임·화질처럼 자주 쓰는 값이 있는 항목) -->
+    <Style x:Key="EditCombo" TargetType="ComboBox">
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="IsEditable" Value="True"/>
+      <Setter Property="Foreground" Value="#E9E9EC"/>
+      <Setter Property="ItemContainerStyle" Value="{StaticResource ComboItem}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <Border x:Name="Bd" Background="#26262C" BorderBrush="#3A3A42" BorderThickness="1" CornerRadius="7"/>
+              <TextBox x:Name="PART_EditableTextBox" Background="Transparent" BorderThickness="0"
+                       Foreground="#E9E9EC" CaretBrush="#E9E9EC" SelectionBrush="#2C6BD6"
+                       Margin="11,0,34,0" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
+              <ToggleButton x:Name="Tgl" Width="32" HorizontalAlignment="Right" Focusable="False" ClickMode="Press"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border Background="Transparent">
+                      <Path HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Data="M 0 0 L 5 5 L 10 0" Stroke="#9A9AA4" StrokeThickness="1.5"/>
+                    </Border>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True"
+                     Focusable="False" PopupAnimation="Fade">
+                <Border Background="#26262C" BorderBrush="#3A3A42" BorderThickness="1" CornerRadius="7"
+                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                        Margin="0,4,0,0" Padding="0,4">
+                  <ScrollViewer MaxHeight="280">
+                    <StackPanel IsItemsHost="True"/>
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#4C4C57"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#3D82F0"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- 토글 스위치 -->
+    <Style x:Key="Toggle" TargetType="CheckBox">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border Background="Transparent" Padding="0,2">
+              <Border x:Name="Track" Width="46" Height="26" CornerRadius="13"
+                      Background="#3A3A42" HorizontalAlignment="Left">
+                <Ellipse x:Name="Knob" Width="20" Height="20" Fill="#9A9AA4"
+                         HorizontalAlignment="Left" Margin="3,0,0,0"/>
+              </Border>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Track" Property="Background" Value="#2F72E0"/>
+                <Setter TargetName="Knob" Property="Fill" Value="#FFFFFF"/>
+                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
+                <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Track" Property="Opacity" Value="0.85"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- 버튼 : 파란 강조 -->
+    <Style x:Key="Accent" TargetType="Button">
+      <Setter Property="Foreground" Value="#FFFFFF"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="20,10"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="#2F72E0" CornerRadius="7" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#4183EC"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#255FC0"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- 버튼 : 보조 -->
+    <Style x:Key="Ghost" TargetType="Button">
+      <Setter Property="Foreground" Value="#D8D8DE"/>
+      <Setter Property="Padding" Value="16,9"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="#26262C" BorderBrush="#3A3A42" BorderThickness="1"
+                    CornerRadius="7" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#31313A"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#4C4C57"/>
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1F1F25"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- 왼쪽 메뉴 -->
+    <Style x:Key="NavItem" TargetType="ListBoxItem">
+      <Setter Property="Foreground" Value="#A8A8B2"/>
+      <Setter Property="FontSize" Value="13.5"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent"
+                    BorderThickness="3,0,0,0" Padding="19,11,16,11">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#26262C"/>
+                <Setter Property="Foreground" Value="#E9E9EC"/>
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#2A2A32"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#3D82F0"/>
+                <Setter Property="Foreground" Value="#FFFFFF"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+  </Window.Resources>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="56"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!-- ===== 헤더 ===== -->
+    <Border Grid.Row="0" Background="#202026" BorderBrush="#2E2E36" BorderThickness="0,0,0,1">
+      <Grid Margin="22,0">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="scrcpy" FontSize="19" FontWeight="SemiBold" Foreground="#F0F0F3"/>
+          <TextBlock Text="설정" FontSize="19" Foreground="#6E6E7A" Margin="9,0,0,0"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <Ellipse x:Name="DevDot" Width="9" Height="9" Fill="#4A4A52" Margin="0,0,9,0"/>
+          <ComboBox x:Name="CmbDevice" Width="260" Style="{StaticResource DarkCombo}"/>
+          <Button x:Name="BtnRefresh" Content="새로고침" Style="{StaticResource Ghost}" Margin="9,0,0,0"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ===== 본문 ===== -->
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="176"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <Border Grid.Column="0" Background="#202026" BorderBrush="#2E2E36" BorderThickness="0,0,1,0">
+        <ListBox x:Name="NavList" Background="Transparent" BorderThickness="0" Margin="0,12,0,0"
+                 ItemContainerStyle="{StaticResource NavItem}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+      </Border>
+
+      <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
+        <StackPanel x:Name="OptionHost" Margin="30,24,24,28"/>
+      </ScrollViewer>
+    </Grid>
+
+    <!-- ===== 하단 ===== -->
+    <Border Grid.Row="2" Background="#202026" BorderBrush="#2E2E36" BorderThickness="0,1,0,0" Padding="22,16,22,18">
+      <StackPanel>
+
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+          <TextBlock Text="프리셋" Foreground="#8A8A94" VerticalAlignment="Center" Margin="0,0,10,0"/>
+          <ComboBox x:Name="CmbPreset" Width="190" Style="{StaticResource DarkCombo}"/>
+          <TextBox x:Name="TxtPresetName" Width="150" Style="{StaticResource DarkText}" Margin="8,0,0,0"
+                   ToolTip="새 이름을 적고 저장을 누르면 새 프리셋이 됩니다"/>
+          <Button x:Name="BtnPresetSave" Content="저장" Style="{StaticResource Ghost}" Margin="8,0,0,0"/>
+          <Button x:Name="BtnPresetDel"  Content="삭제" Style="{StaticResource Ghost}" Margin="6,0,0,0"/>
+          <TextBlock Text="직접 추가" Foreground="#8A8A94" VerticalAlignment="Center" Margin="22,0,10,0"/>
+          <TextBox x:Name="TxtExtra" Width="230" Style="{StaticResource DarkText}" FontFamily="Consolas"/>
+        </StackPanel>
+
+        <TextBox x:Name="TxtCmd" Style="{StaticResource CmdBox}" Height="58" Margin="0,0,0,14"/>
+
+        <StackPanel Orientation="Horizontal">
+          <Button x:Name="BtnRun"  Content="실행"        Style="{StaticResource Accent}" Width="150"/>
+          <Button x:Name="BtnCopy" Content="명령어 복사"  Style="{StaticResource Ghost}"  Margin="10,0,0,0"/>
+          <Button x:Name="BtnBat"  Content=".bat 로 저장" Style="{StaticResource Ghost}"  Margin="8,0,0,0"/>
+          <TextBlock x:Name="LblStatus" Foreground="#7E7E88" VerticalAlignment="Center" Margin="20,0,0,0"/>
+        </StackPanel>
+
+      </StackPanel>
+    </Border>
+
+  </Grid>
+</Window>
+'@
+
+$reader = New-Object System.Xml.XmlNodeReader $xamlDoc
+$win = [Windows.Markup.XamlReader]::Load($reader)
+
+# 이름 있는 요소 꺼내기
+$NavList       = $win.FindName('NavList')
+$OptionHost    = $win.FindName('OptionHost')
+$CmbDevice     = $win.FindName('CmbDevice')
+$DevDot        = $win.FindName('DevDot')
+$BtnRefresh    = $win.FindName('BtnRefresh')
+$CmbPreset     = $win.FindName('CmbPreset')
+$TxtPresetName = $win.FindName('TxtPresetName')
+$BtnPresetSave = $win.FindName('BtnPresetSave')
+$BtnPresetDel  = $win.FindName('BtnPresetDel')
+$TxtExtra      = $win.FindName('TxtExtra')
+$TxtCmd        = $win.FindName('TxtCmd')
+$BtnRun        = $win.FindName('BtnRun')
+$BtnCopy       = $win.FindName('BtnCopy')
+$BtnBat        = $win.FindName('BtnBat')
+$LblStatus     = $win.FindName('LblStatus')
+
+$Controls = @{}
+$Pages    = @{}
+$script:Presets = @{}
+$script:ready   = $false
+
+$StyleText  = $win.FindResource('DarkText')
+$StyleCombo = $win.FindResource('DarkCombo')
+$StyleEdit  = $win.FindResource('EditCombo')
+$StyleToggle= $win.FindResource('Toggle')
+
+$ColLabel = [Windows.Media.BrushConverter]::new().ConvertFromString('#E4E4E9')
+$ColHint  = [Windows.Media.BrushConverter]::new().ConvertFromString('#76767F')
+$ColTitle = [Windows.Media.BrushConverter]::new().ConvertFromString('#F0F0F3')
+$ColGreen = [Windows.Media.BrushConverter]::new().ConvertFromString('#3FB950')
+$ColGray  = [Windows.Media.BrushConverter]::new().ConvertFromString('#4A4A52')
+
+# ---------- 그룹별 페이지 생성 ----------
+foreach ($group in ($OPTIONS.Group | Select-Object -Unique)) {
+
+    $panel = New-Object Windows.Controls.StackPanel
+
+    $title = New-Object Windows.Controls.TextBlock
+    $title.Text = $group
+    $title.FontSize = 20
+    $title.FontWeight = 'SemiBold'
+    $title.Foreground = $ColTitle
+    $title.Margin = '0,0,0,22'
+    [void]$panel.Children.Add($title)
+
+    foreach ($opt in ($OPTIONS | Where-Object { $_.Group -eq $group })) {
+
+        $row = New-Object Windows.Controls.StackPanel
+        $row.Margin = '0,0,0,20'
+
+        $lbl = New-Object Windows.Controls.TextBlock
+        $lbl.Text = $opt.Label
+        $lbl.Foreground = $ColLabel
+        $lbl.FontSize = 13.5
+        $lbl.Margin = '0,0,0,7'
+        [void]$row.Children.Add($lbl)
+
+        $line = New-Object Windows.Controls.StackPanel
+        $line.Orientation = 'Horizontal'
+
+        $extraCtrl = $null   # 일부 항목은 컨트롤 옆에 버튼이 하나 더 붙는다 (예: 경로 [찾아보기])
+
+        switch ($opt.Type) {
+            'check' {
+                $c = New-Object Windows.Controls.CheckBox
+                $c.Style = $StyleToggle
+                $c.IsChecked = [bool]$opt.Default
+                $c.VerticalAlignment = 'Center'
+                $c.Add_Checked({ Update-Preview })
+                $c.Add_Unchecked({ Update-Preview })
+            }
+            'path' {
+                # 실행 파일 경로 지정칸 + [찾아보기]. 고르면 config.json 에 바로 저장된다.
+                # (다음 실행부터 적용 — 지금 떠 있는 세션의 $SCRCPY_EXE 를 바꾸지는 않는다)
+                $c = New-Object Windows.Controls.TextBox
+                $c.Style = $StyleText
+                $c.Width = 330
+                $c.Text = [string]$(if ($opt.Key -eq 'scrcpyPath') { $SCRCPY_EXE } else { $ADB_EXE })
+                $c.Tag = $opt
+                $c.Add_TextChanged({
+                    param($s, $e)
+                    $script:Config[$s.Tag.Key] = $s.Text.Trim()
+                    Write-Config $script:Config
+                })
+
+                $extraCtrl = New-Object Windows.Controls.Button
+                $extraCtrl.Content = '찾아보기'
+                $extraCtrl.Style = $win.FindResource('Ghost')
+                $extraCtrl.Margin = '8,0,0,0'
+                $extraCtrl.Tag = $c
+                $extraCtrl.Add_Click({
+                    param($s, $e)
+                    $box = $s.Tag
+                    $dlg = New-Object Microsoft.Win32.OpenFileDialog
+                    $dlg.Filter = '실행 파일 (*.exe)|*.exe'
+                    if ($box.Text -and (Test-Path $box.Text)) {
+                        $dlg.FileName = Split-Path $box.Text -Leaf
+                        $dlg.InitialDirectory = Split-Path $box.Text -Parent
+                    }
+                    if ($dlg.ShowDialog()) {
+                        $box.Text = $dlg.FileName
+                        $LblStatus.Text = '저장했습니다. 다음 실행부터 적용됩니다.'
+                    }
+                })
+            }
+            'phonepref' {
+                # 폰 설정을 직접 바꾸는 토글. 현재 값은 시작할 때 폰에서 읽어온다.
+                # Add_Click 을 쓰는 이유: Checked/Unchecked 는 코드로 값을 넣을 때도 발동해서
+                # 초기화 중에 폰 설정을 덮어써 버린다. Click 은 사람이 누를 때만 발동.
+                $c = New-Object Windows.Controls.CheckBox
+                $c.Style = $StyleToggle
+                $c.VerticalAlignment = 'Center'
+                $c.Tag = $opt
+                $c.Add_Click({
+                    param($s, $e)
+                    $o = $s.Tag
+                    $v = if ($s.IsChecked) { '1' } else { '0' }
+                    try {
+                        & $ADB_EXE shell settings put $o.SettingNs $o.SettingKey $v 2>$null | Out-Null
+                        $LblStatus.Text = "폰 설정 반영: $($o.Label) = " + $(if ($s.IsChecked) { '켬' } else { '끔' })
+                    } catch {
+                        $LblStatus.Text = "폰 설정 변경 실패 — 기기 연결을 확인하세요"
+                    }
+                })
+            }
+            'combo' {
+                $c = New-Object Windows.Controls.ComboBox
+                $c.Style = $StyleCombo
+                $c.Width = 210
+                foreach ($i in $opt.Items) { [void]$c.Items.Add($i) }
+                $c.SelectedItem = $opt.Default
+                $c.Add_SelectionChanged({ Update-Preview })
+            }
+            'editcombo' {
+                # 목록에서 고를 수도, 직접 칠 수도 있는 칸.
+                # ※ 여기서 편집칸 Text 를 코드로 다시 쓰면 안 된다 — WPF 는 선택 처리 도중 Text 를
+                #   건드리면 선택이 풀리면서 칸이 비어버린다(실측). 그래서 목록 항목은 값 그대로만 넣는다.
+                $c = New-Object Windows.Controls.ComboBox
+                $c.Style = $StyleEdit
+                $c.Width = 210
+                foreach ($i in $opt.Items) { [void]$c.Items.Add($i) }
+                $c.Text = [string]$opt.Default
+                $c.Add_SelectionChanged({ Update-Preview })
+                $c.Add_KeyUp({ Update-Preview })
+            }
+            default {
+                $c = New-Object Windows.Controls.TextBox
+                $c.Style = $StyleText
+                $c.Width = 210
+                $c.Text = [string]$opt.Default
+                $c.Add_TextChanged({ Update-Preview })
+            }
+        }
+        [void]$line.Children.Add($c)
+        if ($extraCtrl) { [void]$line.Children.Add($extraCtrl) }
+
+        $hint = New-Object Windows.Controls.TextBlock
+        $hint.Text = $opt.Hint
+        $hint.Foreground = $ColHint
+        $hint.FontSize = 12
+        $hint.VerticalAlignment = 'Center'
+        $hint.Margin = '14,0,0,0'
+        $hint.TextWrapping = 'Wrap'
+        $hint.MaxWidth = 380
+        [void]$line.Children.Add($hint)
+
+        [void]$row.Children.Add($line)
+        [void]$panel.Children.Add($row)
+
+        $Controls[$opt.Key] = $c
+    }
+
+    $Pages[$group] = $panel
+    [void]$NavList.Items.Add($group)
+}
+
+# =============================================================
+#  기능
+# =============================================================
+
+function Get-ScrcpyArgs {
+    $list = [System.Collections.Generic.List[string]]::new()
+
+    if ($CmbDevice.SelectedItem -and $CmbDevice.SelectedItem -ne '(자동)') {
+        $list.Add('--serial=' + $CmbDevice.SelectedItem)
+    }
+    foreach ($opt in $OPTIONS) {
+        $c = $Controls[$opt.Key]
+        switch ($opt.Type) {
+            'phonepref' { }   # 폰 설정이라 scrcpy 명령어에는 안 들어감
+            'path'      { }   # 실행 파일 위치라 scrcpy 명령어에는 안 들어감
+            'check'     { if ($c.IsChecked) { $list.Add($opt.Arg) } }
+            'combo'     { $v = [string]$c.SelectedItem; if ($v -and $v -ne '(기본)') { $list.Add($opt.Arg -f $v) } }
+            'editcombo' {
+                # 목록에서 고른 직후엔 '1920  FHD…' 형태일 수 있으므로 값(첫 토막)만 쓴다
+                $v = (([string]$c.Text -split '\s{2,}')[0]).Trim()
+                if ($v -and $v -ne '(기본)') { $list.Add($opt.Arg -f $v) }
+            }
+            default     { $v = $c.Text.Trim();          if ($v)                     { $list.Add($opt.Arg -f $v) } }
+        }
+    }
+    $extra = $TxtExtra.Text.Trim()
+    if ($extra) { foreach ($e in ($extra -split '\s+')) { $list.Add($e) } }
+    return $list.ToArray()
+}
+
+function Format-Cmd {
+    param([string[]]$Arguments)
+    $quoted = $Arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
+    return 'scrcpy ' + ($quoted -join ' ')
+}
+
+function Update-Preview {
+    if (-not $script:ready) { return }
+    $TxtCmd.Text = Format-Cmd (Get-ScrcpyArgs)
+}
+
+function Refresh-Devices {
+    $sel = $CmbDevice.SelectedItem
+    $CmbDevice.Items.Clear()
+    [void]$CmbDevice.Items.Add('(자동)')
+    try {
+        foreach ($line in (& $ADB_EXE devices 2>$null)) {
+            if ($line -match '^(\S+)\s+device\s*$') { [void]$CmbDevice.Items.Add($Matches[1]) }
+        }
+    } catch { }
+    if ($sel -and $CmbDevice.Items.Contains($sel)) { $CmbDevice.SelectedItem = $sel }
+    else { $CmbDevice.SelectedIndex = 0 }
+
+    $n = $CmbDevice.Items.Count - 1
+    if (-not $SCRCPY_EXE) {
+        $DevDot.Fill = $ColGray
+        $LblStatus.Text = 'scrcpy.exe 를 찾지 못했습니다 — 왼쪽 [설정] 에서 위치를 지정하세요'
+    }
+    elseif ($n -gt 0) { $DevDot.Fill = $ColGreen; $LblStatus.Text = "기기 $n 대 연결됨" }
+    else              { $DevDot.Fill = $ColGray;  $LblStatus.Text = '연결된 기기 없음 — 폰의 무선 디버깅을 확인하세요' }
+}
+
+# 프리셋 파일이 아직 없을 때 넣어주는 기본 3종.
+# 여기에 없는 키는 그 항목의 Default 값이 그대로 쓰인다.
+function New-DefaultPresets {
+    return @{
+        '평소용'   = @{ 'max-size'='1850'; 'max-fps'='120'; 'video-bit-rate'='8M';  'video-codec'='(기본)'; 'screen-off-timeout'='500'; 'keyboard'='uhid'; '__extra'='' }
+        '고화질'   = @{ 'max-size'='1920'; 'max-fps'='120'; 'video-bit-rate'='16M'; 'video-codec'='h265';   'screen-off-timeout'='500'; 'keyboard'='uhid'; '__extra'='' }
+        '가볍게'   = @{ 'max-size'='1080'; 'max-fps'='60';  'video-bit-rate'='4M';  'video-codec'='h265';   'screen-off-timeout'='500'; 'keyboard'='uhid'; 'turn-screen-off'=$true; '__extra'='' }
+        '가로화면' = @{ 'max-size'='';     'max-fps'='120'; 'video-bit-rate'='8M';  'video-codec'='(기본)'; 'screen-off-timeout'='500'; 'keyboard'='uhid'; 'new-display'='1920x1080'; '__extra'='' }
+    }
+}
+
+# phonepref 토글들의 현재 상태를 폰에서 읽어와 화면에 반영한다.
+# (추측해서 보여주면 실제 폰 상태와 어긋나므로 항상 읽어서 맞춘다)
+function Sync-PhonePrefs {
+    foreach ($opt in ($OPTIONS | Where-Object { $_.Type -eq 'phonepref' })) {
+        $c = $Controls[$opt.Key]
+        try {
+            $raw = (& $ADB_EXE shell settings get $opt.SettingNs $opt.SettingKey 2>$null | Select-Object -First 1)
+            $c.IsChecked = ([string]$raw).Trim() -eq '1'
+        } catch { }
+    }
+}
+
+function Read-Presets {
+    if (Test-Path $PRESET_FILE) {
+        try { $script:Presets = Get-Content $PRESET_FILE -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable }
+        catch { $script:Presets = @{} }
+    }
+    if (-not $script:Presets -or $script:Presets.Count -eq 0) {
+        $script:Presets = New-DefaultPresets
+        Write-Presets
+    }
+    $CmbPreset.Items.Clear()
+    [void]$CmbPreset.Items.Add('(선택 안 함)')
+    foreach ($k in ($script:Presets.Keys | Sort-Object)) { [void]$CmbPreset.Items.Add($k) }
+    $CmbPreset.SelectedIndex = 0
+}
+
+function Write-Presets {
+    $script:Presets | ConvertTo-Json -Depth 5 | Set-Content -Path $PRESET_FILE -Encoding UTF8
+}
+
+function Get-CurrentValues {
+    $h = @{}
+    foreach ($opt in $OPTIONS) {
+        if ($opt.Type -in @('phonepref','path')) { continue }   # 폰 상태·PC 경로라 프리셋에 저장하지 않음
+        $c = $Controls[$opt.Key]
+        switch ($opt.Type) {
+            'check'     { $h[$opt.Key] = [bool]$c.IsChecked }
+            'combo'     { $h[$opt.Key] = [string]$c.SelectedItem }
+            'editcombo' { $h[$opt.Key] = (([string]$c.Text -split '\s{2,}')[0]).Trim() }
+            default     { $h[$opt.Key] = [string]$c.Text }
+        }
+    }
+    $h['__extra'] = $TxtExtra.Text
+    return $h
+}
+
+function Set-Values {
+    param($Values)
+    $script:ready = $false
+    foreach ($opt in $OPTIONS) {
+        if ($opt.Type -in @('phonepref','path')) { continue }
+        if (-not $Values.ContainsKey($opt.Key)) { continue }
+        $c = $Controls[$opt.Key]
+        switch ($opt.Type) {
+            'check'     { $c.IsChecked = [bool]$Values[$opt.Key] }
+            'combo'     { if ($c.Items.Contains($Values[$opt.Key])) { $c.SelectedItem = $Values[$opt.Key] } }
+            'editcombo' { $c.Text = [string]$Values[$opt.Key] }   # Text 만 세팅 (SelectedItem 은 WPF 가 알아서 맞춤)
+            default     { $c.Text = [string]$Values[$opt.Key] }
+        }
+    }
+    if ($Values.ContainsKey('__extra')) { $TxtExtra.Text = [string]$Values['__extra'] }
+    $script:ready = $true
+    Update-Preview
+}
+
+# ---------- 이벤트 ----------
+$NavList.Add_SelectionChanged({
+    $g = [string]$NavList.SelectedItem
+    if ($g -and $Pages.ContainsKey($g)) {
+        $OptionHost.Children.Clear()
+        [void]$OptionHost.Children.Add($Pages[$g])
+    }
+})
+
+$BtnRefresh.Add_Click({ Refresh-Devices; Sync-PhonePrefs; Update-Preview })
+$CmbDevice.Add_SelectionChanged({ Update-Preview })
+$TxtExtra.Add_TextChanged({ Update-Preview })
+
+$CmbPreset.Add_SelectionChanged({
+    $name = [string]$CmbPreset.SelectedItem
+    if ($name -and $name -ne '(선택 안 함)' -and $script:Presets.ContainsKey($name)) {
+        Set-Values $script:Presets[$name]
+        $TxtPresetName.Text = $name
+        $LblStatus.Text = "프리셋 '$name' 불러옴"
+    }
+})
+
+$BtnPresetSave.Add_Click({
+    $name = $TxtPresetName.Text.Trim()
+    if (-not $name) { $name = [string]$CmbPreset.SelectedItem }
+    if (-not $name -or $name -eq '(선택 안 함)') {
+        $LblStatus.Text = '저장할 프리셋 이름을 입력하세요'
+        return
+    }
+    $script:Presets[$name] = Get-CurrentValues
+    Write-Presets
+    Read-Presets
+    $CmbPreset.SelectedItem = $name
+    $LblStatus.Text = "프리셋 '$name' 저장됨"
+})
+
+$BtnPresetDel.Add_Click({
+    $name = [string]$CmbPreset.SelectedItem
+    if (-not $name -or $name -eq '(선택 안 함)') { return }
+    $script:Presets.Remove($name)
+    Write-Presets
+    Read-Presets
+    $LblStatus.Text = "프리셋 '$name' 삭제됨"
+})
+
+$BtnCopy.Add_Click({
+    Set-Clipboard -Value $TxtCmd.Text
+    $LblStatus.Text = '명령어를 클립보드에 복사했습니다'
+})
+
+$BtnBat.Add_Click({
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Filter = '배치 파일 (*.bat)|*.bat'
+    $dlg.FileName = 'scrcpy_my.bat'
+    $dlg.InitialDirectory = $SCRCPY_DIR
+    if (-not $dlg.ShowDialog()) { return }
+    $argLine = (Format-Cmd (Get-ScrcpyArgs)) -replace '^scrcpy ', ''
+    $content = @"
+@echo off
+chcp 65001 >nul
+setlocal
+taskkill /f /im scrcpy.exe >nul 2>&1
+adb devices >nul
+timeout /t 2 /nobreak >nul
+"$SCRCPY_EXE" $argLine
+if errorlevel 1 pause
+endlocal
+"@
+    Set-Content -Path $dlg.FileName -Value $content -Encoding UTF8
+    $LblStatus.Text = "저장됨: $($dlg.FileName)"
+})
+
+$BtnRun.Add_Click({
+    if (-not $SCRCPY_EXE -or -not (Test-Path $SCRCPY_EXE)) {
+        [void][Windows.MessageBox]::Show(
+            "scrcpy.exe 를 찾을 수 없습니다.`n`n찾아본 곳:`n" + ($SCRCPY_CANDIDATES -join "`n") +
+            "`n`n스크립트 위쪽 `$SCRCPY_CANDIDATES 에 실제 경로를 추가하세요.", 'scrcpy 설정')
+        return
+    }
+    try {
+        # ※ Start-Process -ArgumentList 배열은 값에 공백이 있으면 인자를 쪼개버린다(실측:
+        #   --window-title=가상화면 1920x1080 → '1920x1080' 이 별개 인자가 되어 실행 실패).
+        #   ProcessStartInfo.ArgumentList 는 각 인자를 알아서 안전하게 넘겨준다.
+        $psi = [System.Diagnostics.ProcessStartInfo]::new()
+        $psi.FileName = $SCRCPY_EXE
+        $psi.WorkingDirectory = $SCRCPY_DIR
+        $psi.UseShellExecute = $false
+        foreach ($a in (Get-ScrcpyArgs)) { $psi.ArgumentList.Add($a) }
+        [void][System.Diagnostics.Process]::Start($psi)
+        $LblStatus.Text = '실행했습니다. 창이 안 뜨면 폰의 무선 디버깅을 확인하세요.'
+    } catch {
+        [void][Windows.MessageBox]::Show("실행 실패:`n$_", 'scrcpy 설정')
+    }
+})
+
+# 창을 닫을 때 현재 값을 통째로 저장해두고, 다음에 켤 때 그대로 복원한다.
+# (프리셋과 별개 — 프리셋은 사람이 이름 붙여 고르는 것, 이건 "하던 대로" 이어받기용)
+$win.Add_Closing({
+    try { Get-CurrentValues | ConvertTo-Json -Depth 5 | Set-Content -Path $LAST_FILE -Encoding UTF8 } catch { }
+})
+
+function Restore-LastValues {
+    if (-not (Test-Path $LAST_FILE)) { return }
+    try {
+        $last = Get-Content $LAST_FILE -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+        if ($last) { Set-Values $last }
+    } catch { }
+}
+
+# ---------- 시작 ----------
+$script:ready = $true
+$NavList.SelectedIndex = 0
+Refresh-Devices
+Sync-PhonePrefs
+Read-Presets
+Restore-LastValues
+Update-Preview
+
+[void]$win.ShowDialog()

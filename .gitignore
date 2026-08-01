@@ -1,0 +1,7 @@
+# 실행하면 생기는 로컬 설정 — PC마다 다르므로 커밋하지 않는다
+scrcpy-gui-config.json
+scrcpy-gui-presets.json
+scrcpy-gui-last.json
+
+# 사용자가 GUI에서 내보낸 배치
+scrcpy_my.bat
