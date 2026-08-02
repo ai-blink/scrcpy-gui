@@ -1,3 +1,7 @@
+param(
+    [switch]$ValidateOnly
+)
+
 # =============================================================
 #  scrcpy 설정 GUI  v0.1.0-beta   (Windows / PowerShell 7 + WPF)
 #  https://github.com/ai-blink/scrcpy-gui                MIT License
@@ -8,7 +12,7 @@
 #    Group : 왼쪽 메뉴 어디에 넣을지 (없는 이름을 쓰면 메뉴가 새로 생김)
 #    Key   : 고유 이름 (프리셋 저장용, 겹치지만 않으면 됨)
 #    Label : 화면에 보일 이름
-#    Type  : check(토글) / text(입력칸) / combo(선택목록)
+#    Type  : check(토글) / text(입력칸) / combo(선택목록) / phonepref(폰 설정) / path(실행 파일 경로)
 #    Arg   : scrcpy에 넘길 인자.  text·combo는 {0} 자리에 값이 들어감
 #    Items : combo일 때 목록.  '(기본)' 을 고르면 그 옵션은 안 붙음
 #    Hint  : 오른쪽에 회색으로 보이는 설명
@@ -18,6 +22,9 @@
 $PRESET_FILE = Join-Path $PSScriptRoot 'scrcpy-gui-presets.json'
 $LAST_FILE   = Join-Path $PSScriptRoot 'scrcpy-gui-last.json'   # 창 닫을 때 현재 값 자동 저장 → 다음에 켜면 복원
 $CONFIG_FILE = Join-Path $PSScriptRoot 'scrcpy-gui-config.json' # scrcpy·adb 실행 파일 위치 (PC마다 다름)
+$OFFICIAL_RELEASE_API = 'https://api.github.com/repos/Genymobile/scrcpy/releases/latest'
+$OFFICIAL_RELEASES_URL = 'https://github.com/Genymobile/scrcpy/releases'
+$DEFAULT_SCRCPY_INSTALL_ROOT = Join-Path $env:LOCALAPPDATA 'scrcpy-gui\scrcpy'
 
 # =============================================================
 #  실행 파일 찾기 — PC 마다 설치 위치가 달라서 순서대로 뒤진다.
@@ -37,7 +44,78 @@ function Read-Config {
 
 function Write-Config {
     param($Config)
-    try { $Config | ConvertTo-Json -Depth 5 | Set-Content -Path $CONFIG_FILE -Encoding UTF8 } catch { }
+    try {
+        $Config | ConvertTo-Json -Depth 5 | Set-Content -Path $CONFIG_FILE -Encoding UTF8
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# Genymobile/scrcpy의 정식 최신 릴리스만 허용한다. URL 입력·제3자 미러는 받지 않는다.
+function Get-OfficialScrcpyRelease {
+    try {
+        $release = Invoke-RestMethod -Uri $OFFICIAL_RELEASE_API -Headers @{ 'User-Agent' = 'scrcpy-gui' } -ErrorAction Stop
+        $tag = [string]$release.tag_name
+        if ($release.draft -or $release.prerelease -or $tag -notmatch '^v\d+\.\d+(?:\.\d+)?$') {
+            throw '최신 정식 릴리스 정보를 확인할 수 없습니다.'
+        }
+
+        $assetName = "scrcpy-win64-$tag.zip"
+        $assets = @($release.assets | Where-Object { $_.name -eq $assetName })
+        if ($assets.Count -ne 1) { throw "공식 64비트 자산($assetName)을 찾지 못했습니다." }
+
+        $asset = $assets[0]
+        $downloadUrl = [string]$asset.browser_download_url
+        $expectedUrl = "https://github.com/Genymobile/scrcpy/releases/download/$tag/$assetName"
+        if ($downloadUrl -cne $expectedUrl) { throw '공식 GitHub 다운로드 경로가 아닙니다.' }
+
+        $digest = [string]$asset.digest
+        if ($digest -notmatch '^sha256:([0-9a-fA-F]{64})$') { throw '공식 SHA-256 digest가 없습니다.' }
+        if ([long]$asset.size -le 0) { throw '공식 자산의 크기가 올바르지 않습니다.' }
+
+        return [pscustomobject]@{
+            Tag         = $tag
+            AssetName   = $assetName
+            DownloadUrl = $downloadUrl
+            Sha256      = $Matches[1].ToLowerInvariant()
+            Size        = [long]$asset.size
+        }
+    } catch {
+        throw "공식 scrcpy 릴리스 정보를 확인하지 못했습니다: $($_.Exception.Message)"
+    }
+}
+
+# 검증된 ZIP도 해제 전 경로 이동(Zip Slip) 항목은 거부한다.
+function Test-SafeZipEntries {
+    param([string]$ZipPath)
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        foreach ($entry in $archive.Entries) {
+            $name = $entry.FullName.Replace('/', '\')
+            if ([System.IO.Path]::IsPathRooted($name) -or
+                $name -match '(^|\\)\.\.(\\|$)' -or
+                $name -match '^[A-Za-z]:') {
+                throw "안전하지 않은 압축 경로가 포함되어 있습니다: $($entry.FullName)"
+            }
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
+
+function Resolve-ScrcpyInstallRoot {
+    param([string]$Value)
+
+    $candidate = if ($Value) { $Value.Trim() } else { '' }
+    if (-not $candidate) { $candidate = $DEFAULT_SCRCPY_INSTALL_ROOT }
+    try {
+        return [System.IO.Path]::GetFullPath($candidate)
+    } catch {
+        throw "설치 폴더 경로가 올바르지 않습니다: $candidate"
+    }
 }
 
 function Get-ExeCandidates {
@@ -127,6 +205,11 @@ $ADB_GLOBS = @(
 $ADB_EXE = Find-Adb -ConfigValue $script:Config.adbPath -Globs $ADB_GLOBS
 if (-not $ADB_EXE) { $ADB_EXE = 'adb' }   # 마지막 수단: PATH 에 있길 기대
 
+if ($ValidateOnly) {
+    Get-OfficialScrcpyRelease | ConvertTo-Json -Compress
+    return
+}
+
 $OPTIONS = @(
     # ---------------- 화면 ----------------
     @{ Group='화면'; Key='max-size';       Label='해상도 상한';   Type='editcombo'; Default='1850'; Items=@('(기본)','3088','2560','1920','1850','1600','1440','1280','1080','720'); Arg='--max-size={0}'; Hint='긴 변 픽셀 하나만 넣습니다 (비율은 폰에 맞춰 자동).  3088=원본 · 1920=FHD(1080x1920) · 1440=HD+(810x1440) · 1080=(607x1080)' },
@@ -155,7 +238,7 @@ $OPTIONS = @(
 
     # ---------------- 입력 ----------------
     @{ Group='입력'; Key='keyboard';       Label='키보드 방식';   Type='combo'; Default='uhid';   Items=@('(기본)','uhid','aoa','sdk','disabled'); Arg='--keyboard={0}'; Hint='uhid = 한글 입력 됨.  한/영 전환은 입력칸에 커서를 놓고 Shift+Space.  폰 기본 키보드가 삼성 키보드여야 함' },
-    @{ Group='입력'; Key='mouse';          Label='마우스 방식';   Type='combo'; Default='(기본)'; Items=@('(기본)','uhid','aoa','sdk','disabled'); Arg='--mouse={0}';    Hint='uhid = 폰에 진짜 마우스 커서가 생김' },
+    @{ Group='입력'; Key='mouse';          Label='마우스 방식';   Type='combo'; Default='(기본)'; Items=@('(기본)','uhid','aoa','sdk','disabled'); Arg='--mouse={0}';    Hint='uhid = 폰에 진짜 마우스 커서가 생김. 캡처되면 Alt 또는 Windows 키를 눌러 빠져나옵니다' },
     @{ Group='입력'; Key='show-touches';   Label='터치 지점 표시'; Type='check'; Default=$false; Arg='--show-touches';      Hint='어디를 눌렀는지 폰 화면에 동그라미' },
     @{ Group='입력'; Key='prefer-text';    Label='텍스트 입력 우선'; Type='check'; Default=$false; Arg='--prefer-text';     Hint='특수문자 입력이 이상할 때 시도' },
     @{ Group='입력'; Key='no-key-repeat';  Label='키 반복 끄기';  Type='check'; Default=$false; Arg='--no-key-repeat';      Hint='키를 눌러도 반복 입력 안 됨' },
@@ -679,7 +762,7 @@ foreach ($group in ($OPTIONS.Group | Select-Object -Unique)) {
                 $c.Add_TextChanged({
                     param($s, $e)
                     $script:Config[$s.Tag.Key] = $s.Text.Trim()
-                    Write-Config $script:Config
+                    $null = Write-Config $script:Config
                 })
 
                 $extraCtrl = New-Object Windows.Controls.Button
@@ -714,6 +797,14 @@ foreach ($group in ($OPTIONS.Group | Select-Object -Unique)) {
                     param($s, $e)
                     $o = $s.Tag
                     $v = if ($s.IsChecked) { '1' } else { '0' }
+                    $approved = [Windows.MessageBox]::Show(
+                        "휴대폰 설정을 직접 바꿉니다.`n`n$($o.Label): " + $(if ($s.IsChecked) { '켬' } else { '끔' }) +
+                        "`n되돌리기: 이 토글을 다시 반대로 바꾸세요.`n`n계속할까요?",
+                        '휴대폰 설정 변경 확인', 'YesNo', 'Warning')
+                    if ($approved -ne [Windows.MessageBoxResult]::Yes) {
+                        $s.IsChecked = -not [bool]$s.IsChecked
+                        return
+                    }
                     try {
                         & $ADB_EXE shell settings put $o.SettingNs $o.SettingKey $v 2>$null | Out-Null
                         $LblStatus.Text = "폰 설정 반영: $($o.Label) = " + $(if ($s.IsChecked) { '켬' } else { '끔' })
@@ -767,6 +858,103 @@ foreach ($group in ($OPTIONS.Group | Select-Object -Unique)) {
         [void]$panel.Children.Add($row)
 
         $Controls[$opt.Key] = $c
+    }
+
+    if ($group -eq '설정') {
+        $install = New-Object Windows.Controls.StackPanel
+        $install.Margin = '0,10,0,0'
+
+        $installTitle = New-Object Windows.Controls.TextBlock
+        $installTitle.Text = '공식 scrcpy 설치'
+        $installTitle.Foreground = $ColLabel
+        $installTitle.FontSize = 13.5
+        $installTitle.Margin = '0,0,0,7'
+        [void]$install.Children.Add($installTitle)
+
+        $installRootLabel = New-Object Windows.Controls.TextBlock
+        $installRootLabel.Text = '설치 폴더 (선택한 폴더 아래에 버전별 폴더를 만듭니다)'
+        $installRootLabel.Foreground = $ColHint
+        $installRootLabel.FontSize = 12
+        $installRootLabel.Margin = '0,0,0,7'
+        [void]$install.Children.Add($installRootLabel)
+
+        $installRootLine = New-Object Windows.Controls.StackPanel
+        $installRootLine.Orientation = 'Horizontal'
+
+        $installRootBox = New-Object Windows.Controls.TextBox
+        $installRootBox.Style = $StyleText
+        $installRootBox.Width = 330
+        $installRootBox.Text = [string]$(if ($script:Config.ContainsKey('installRoot') -and $script:Config.installRoot) { $script:Config.installRoot } else { $DEFAULT_SCRCPY_INSTALL_ROOT })
+        $installRootBox.Add_TextChanged({
+            param($s, $e)
+            $script:Config['installRoot'] = $s.Text.Trim()
+            $null = Write-Config $script:Config
+        })
+        $script:InstallRootBox = $installRootBox
+        [void]$installRootLine.Children.Add($installRootBox)
+
+        $installRootBrowse = New-Object Windows.Controls.Button
+        $installRootBrowse.Content = '설치 폴더 선택'
+        $installRootBrowse.Style = $win.FindResource('Ghost')
+        $installRootBrowse.Margin = '8,0,0,0'
+        $installRootBrowse.Tag = $installRootBox
+        $installRootBrowse.Add_Click({
+            param($s, $e)
+            Add-Type -AssemblyName System.Windows.Forms
+            $box = $s.Tag
+            $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+            $dlg.Description = 'scrcpy 버전별 설치 폴더를 만들 위치를 고르세요.'
+            if ($box.Text -and (Test-Path -LiteralPath $box.Text)) { $dlg.SelectedPath = $box.Text }
+            if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $box.Text = $dlg.SelectedPath }
+        })
+        [void]$installRootLine.Children.Add($installRootBrowse)
+
+        [void]$install.Children.Add($installRootLine)
+
+        $installLine = New-Object Windows.Controls.StackPanel
+        $installLine.Orientation = 'Horizontal'
+
+        $installButton = New-Object Windows.Controls.Button
+        $installButton.Content = '공식 최신 버전 설치'
+        $installButton.Style = $win.FindResource('Ghost')
+        $installButton.Add_Click({ Install-OfficialScrcpy })
+        [void]$installLine.Children.Add($installButton)
+
+        $guideButton = New-Object Windows.Controls.Button
+        $guideButton.Content = '설치 안내 열기'
+        $guideButton.Style = $win.FindResource('Ghost')
+        $guideButton.Margin = '8,0,0,0'
+        $guideButton.Add_Click({
+            $guidePath = Join-Path $PSScriptRoot 'scrcpy-install-guide.html'
+            if (-not (Test-Path -LiteralPath $guidePath)) {
+                [void][Windows.MessageBox]::Show(
+                    "설치 안내 파일을 찾지 못했습니다.`n`n경로: $guidePath",
+                    'scrcpy 설치 안내', 'OK', 'Error')
+                return
+            }
+            try {
+                # 사용자가 직접 누른 버튼으로만 기본 브라우저를 열며, 설치·다운로드는 시작하지 않는다.
+                Start-Process -FilePath $guidePath -ErrorAction Stop
+            } catch {
+                [void][Windows.MessageBox]::Show(
+                    "설치 안내를 열지 못했습니다.`n`n$($_.Exception.Message)",
+                    'scrcpy 설치 안내', 'OK', 'Error')
+            }
+        })
+        [void]$installLine.Children.Add($guideButton)
+
+        $installHint = New-Object Windows.Controls.TextBlock
+        $installHint.Text = 'Genymobile GitHub 릴리스만 사용합니다. 다운로드 전에 버전·출처·SHA-256 검증·설치 경로를 확인합니다.'
+        $installHint.Foreground = $ColHint
+        $installHint.FontSize = 12
+        $installHint.VerticalAlignment = 'Center'
+        $installHint.Margin = '14,0,0,0'
+        $installHint.TextWrapping = 'Wrap'
+        $installHint.MaxWidth = 380
+        [void]$installLine.Children.Add($installHint)
+
+        [void]$install.Children.Add($installLine)
+        [void]$panel.Children.Add($install)
     }
 
     $Pages[$group] = $panel
@@ -833,6 +1021,112 @@ function Refresh-Devices {
     }
     elseif ($n -gt 0) { $DevDot.Fill = $ColGreen; $LblStatus.Text = "기기 $n 대 연결됨" }
     else              { $DevDot.Fill = $ColGray;  $LblStatus.Text = '연결된 기기 없음 — 폰의 무선 디버깅을 확인하세요' }
+}
+
+# 다운로드는 이 버튼을 누른 뒤 확인 대화상자에서 다시 승인해야만 시작한다.
+# 기존 설치 경로는 건드리지 않고 사용자 프로필 아래의 버전별 새 폴더만 사용한다.
+function Install-OfficialScrcpy {
+    try {
+        $release = Get-OfficialScrcpyRelease
+    } catch {
+        $LblStatus.Text = '공식 릴리스 정보를 확인하지 못했습니다.'
+        [void][Windows.MessageBox]::Show($_.Exception.Message, 'scrcpy 설치', 'OK', 'Error')
+        return
+    }
+
+    try {
+        $installRoot = Resolve-ScrcpyInstallRoot $script:InstallRootBox.Text
+    } catch {
+        [void][Windows.MessageBox]::Show($_.Exception.Message, 'scrcpy 설치', 'OK', 'Error')
+        return
+    }
+    $targetDir = Join-Path $installRoot $release.Tag
+    if (Test-Path -LiteralPath $targetDir) {
+        [void][Windows.MessageBox]::Show(
+            "$($release.Tag) 설치 폴더가 이미 있습니다.`n`n기존 파일을 덮어쓰지 않기 위해 설치하지 않았습니다.`n설정 탭의 [찾아보기]로 사용할 scrcpy.exe를 선택할 수 있습니다.`n`n경로: $targetDir",
+            'scrcpy 설치', 'OK', 'Information')
+        return
+    }
+
+    $sizeMiB = [math]::Round($release.Size / 1MB, 1)
+    $approved = [Windows.MessageBox]::Show(
+        "공식 scrcpy $($release.Tag)를 설치합니다.`n`n" +
+        "파일: $($release.AssetName) ($sizeMiB MiB / $($release.Size.ToString('N0')) 바이트)`n" +
+        "출처: $OFFICIAL_RELEASES_URL`n" +
+        "SHA-256: $($release.Sha256)`n" +
+        "설치 경로: $targetDir`n`n" +
+        "[예]를 누르면 Genymobile의 공식 GitHub 릴리스에서만 다운로드하고, SHA-256 검증에 성공한 ZIP만 새 폴더에 압축 해제합니다.`n" +
+        "기존 scrcpy 설치를 덮어쓰거나 자동 실행하지 않습니다.",
+        '공식 scrcpy 설치 확인', 'YesNo', 'Question')
+    if ($approved -ne [Windows.MessageBoxResult]::Yes) { return }
+
+    $token = [guid]::NewGuid().ToString('N')
+    $tempRoot = [System.IO.Path]::GetTempPath()
+    $zipPath = Join-Path $tempRoot "scrcpy-gui-$($release.Tag)-$token.zip"
+    $stageDir = Join-Path $tempRoot "scrcpy-gui-$($release.Tag)-$token"
+
+    try {
+        $LblStatus.Text = "공식 scrcpy $($release.Tag) 다운로드 중..."
+        Invoke-WebRequest -Uri $release.DownloadUrl -OutFile $zipPath -Headers @{ 'User-Agent' = 'scrcpy-gui' } -ErrorAction Stop
+
+        $actualHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+        if ($actualHash -cne $release.Sha256) {
+            throw "SHA-256 검증 실패: 기대 $($release.Sha256), 실제 $actualHash"
+        }
+
+        Test-SafeZipEntries -ZipPath $zipPath
+        New-Item -ItemType Directory -Path $stageDir -ErrorAction Stop | Out-Null
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $stageDir -ErrorAction Stop
+
+        $scrcpyFiles = @(Get-ChildItem -LiteralPath $stageDir -Filter 'scrcpy.exe' -File -Recurse -ErrorAction Stop)
+        if ($scrcpyFiles.Count -ne 1) { throw '압축 해제 결과에서 scrcpy.exe를 하나만 확인할 수 없습니다.' }
+
+        $stagedScrcpy = $scrcpyFiles[0].FullName
+        $stagedAdb = Join-Path (Split-Path $stagedScrcpy -Parent) 'adb.exe'
+        if (-not (Test-Path -LiteralPath $stagedAdb)) { throw '압축 해제 결과에서 adb.exe를 찾지 못했습니다.' }
+        $relativeScrcpy = [System.IO.Path]::GetRelativePath($stageDir, $stagedScrcpy)
+        $relativeAdb = [System.IO.Path]::GetRelativePath($stageDir, $stagedAdb)
+
+        New-Item -ItemType Directory -Path $installRoot -Force -ErrorAction Stop | Out-Null
+        Move-Item -LiteralPath $stageDir -Destination $targetDir -ErrorAction Stop
+        $stageDir = $null
+
+        # Move-Item 뒤에는 임시 경로가 아닌 새 설치 경로를 config에 기록한다.
+        $installedScrcpy = Join-Path $targetDir $relativeScrcpy
+        $installedAdb = Join-Path $targetDir $relativeAdb
+        if (-not (Test-Path -LiteralPath $installedScrcpy) -or -not (Test-Path -LiteralPath $installedAdb)) {
+            throw '설치 후 scrcpy.exe 또는 adb.exe를 확인하지 못했습니다.'
+        }
+
+        $script:SCRCPY_EXE = $installedScrcpy
+        $script:SCRCPY_DIR = Split-Path $installedScrcpy -Parent
+        $script:SCRCPY_VER = Get-ScrcpyVersion $installedScrcpy
+        $script:ADB_EXE = $installedAdb
+        $script:Config['scrcpyPath'] = $installedScrcpy
+        $script:Config['adbPath'] = $installedAdb
+        $script:Config['installRoot'] = $installRoot
+        $configSaved = Write-Config $script:Config
+
+        $Controls['scrcpyPath'].Text = $installedScrcpy
+        $Controls['adbPath'].Text = $installedAdb
+        if ($configSaved) {
+            $LblStatus.Text = "공식 scrcpy $($release.Tag) 설치·검증 완료 — 다음 [실행]부터 이 버전을 사용합니다."
+        } else {
+            $LblStatus.Text = "설치는 완료됐지만 경로 저장에 실패했습니다 — 설정 탭에서 경로를 다시 지정하세요."
+        }
+    } catch {
+        $LblStatus.Text = '공식 scrcpy 설치에 실패했습니다.'
+        [void][Windows.MessageBox]::Show("설치 실패:`n$($_.Exception.Message)", 'scrcpy 설치', 'OK', 'Error')
+    } finally {
+        if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue }
+        if ($stageDir -and (Test-Path -LiteralPath $stageDir)) {
+            $safeTempRoot = [System.IO.Path]::GetFullPath($tempRoot)
+            $safeStageDir = [System.IO.Path]::GetFullPath($stageDir)
+            if ($safeStageDir.StartsWith($safeTempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 
 # 프리셋 파일이 아직 없을 때 넣어주는 기본 3종.
@@ -987,8 +1281,8 @@ endlocal
 $BtnRun.Add_Click({
     if (-not $SCRCPY_EXE -or -not (Test-Path $SCRCPY_EXE)) {
         [void][Windows.MessageBox]::Show(
-            "scrcpy.exe 를 찾을 수 없습니다.`n`n찾아본 곳:`n" + ($SCRCPY_CANDIDATES -join "`n") +
-            "`n`n스크립트 위쪽 `$SCRCPY_CANDIDATES 에 실제 경로를 추가하세요.", 'scrcpy 설정')
+            "scrcpy.exe 를 찾을 수 없습니다.`n`n설정 탭에서 [공식 최신 버전 설치]를 누르거나, 이미 설치했다면 [찾아보기]로 scrcpy.exe를 선택하세요.",
+            'scrcpy 설정')
         return
     }
     try {

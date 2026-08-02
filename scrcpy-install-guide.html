@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#07101d" />
+    <meta
+      name="description"
+      content="scrcpy 설정 GUI를 위한 Windows 설치·검증·무선 연결 안내"
+    />
+    <title>scrcpy — Windows 설치 안내</title>
+    <style>
+      :root {
+        --ink: #eaf7ff;
+        --muted: #92aabb;
+        --navy: #07101d;
+        --surface: rgba(12, 28, 46, 0.76);
+        --line: rgba(182, 226, 255, 0.17);
+        --cyan: #61e6ff;
+        --blue: #5488ff;
+        --lime: #c7ff70;
+        --orange: #ffbb68;
+        --danger: #ff8f97;
+        --sans: "Segoe UI Variable", "Segoe UI", "Malgun Gothic", Arial, sans-serif;
+        --mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        min-width: 320px;
+        margin: 0;
+        overflow-x: hidden;
+        color: var(--ink);
+        background: var(--navy);
+        font-family: var(--sans);
+      }
+      a { color: inherit; text-decoration: none; }
+      button { font: inherit; }
+      :focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
+
+      .skip {
+        position: fixed; z-index: 30; top: -80px; left: 24px;
+        padding: 11px 16px; border-radius: 10px;
+        color: #04111d; background: var(--lime); font-weight: 800;
+      }
+      .skip:focus { top: 18px; }
+
+      .glow, .grid, .noise { position: fixed; pointer-events: none; inset: 0; }
+      .glow {
+        z-index: -3;
+        background:
+          radial-gradient(circle at 12% 8%, rgba(55, 189, 255, 0.28), transparent 28rem),
+          radial-gradient(circle at 88% 38%, rgba(80, 95, 255, 0.25), transparent 32rem),
+          radial-gradient(circle at 50% 100%, rgba(86, 239, 216, 0.12), transparent 33rem);
+        animation: atmosphere 14s ease-in-out infinite alternate;
+      }
+      .grid {
+        z-index: -2;
+        opacity: 0.34;
+        background-image:
+          linear-gradient(rgba(160, 218, 255, 0.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(160, 218, 255, 0.07) 1px, transparent 1px);
+        background-size: 68px 68px;
+        mask-image: linear-gradient(to bottom, black, transparent 82%);
+      }
+      .noise { z-index: -1; opacity: 0.2; background-image: radial-gradient(rgba(255,255,255,.55) .5px, transparent .7px); background-size: 4px 4px; mix-blend-mode: soft-light; }
+
+      .nav {
+        display: flex; position: relative; align-items: center; justify-content: space-between;
+        max-width: 1240px; min-height: 82px; margin: auto; padding: 0 28px;
+      }
+      .brand { display: flex; align-items: center; gap: 12px; font: 800 13px/1 var(--mono); letter-spacing: .08em; }
+      .brand__mark { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid rgba(97,230,255,.7); border-radius: 9px; color: var(--cyan); box-shadow: 0 0 28px rgba(97,230,255,.22); }
+      .nav__links { display: flex; gap: 22px; color: var(--muted); font: 700 12px/1 var(--mono); letter-spacing: .05em; }
+      .nav__links a:hover { color: var(--cyan); }
+
+      .hero { position: relative; max-width: 1240px; margin: 0 auto; padding: clamp(45px, 8vw, 115px) 28px 88px; }
+      .hero__orbit { position: absolute; top: 31px; right: -115px; width: min(58vw, 660px); aspect-ratio: 1; border: 1px solid rgba(123, 211, 255, .19); border-radius: 50%; box-shadow: inset 0 0 90px rgba(51,141,255,.09), 0 0 140px rgba(45,119,255,.09); animation: rotate 28s linear infinite; }
+      .hero__orbit::before, .hero__orbit::after { position: absolute; border: inherit; border-radius: inherit; content: ""; }
+      .hero__orbit::before { inset: 14%; border-color: rgba(199,255,112,.18); }
+      .hero__orbit::after { inset: 35%; border-color: rgba(97,230,255,.34); box-shadow: 0 0 40px rgba(97,230,255,.35); }
+      .hero__eyebrow { display: inline-flex; position: relative; align-items: center; gap: 9px; margin: 0 0 24px; color: var(--cyan); font: 800 12px/1 var(--mono); letter-spacing: .12em; }
+      .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 0 rgba(199,255,112,.65); animation: pulse 2s ease-out infinite; }
+      h1 { position: relative; max-width: 860px; margin: 0; font-size: clamp(48px, 8vw, 104px); font-weight: 800; letter-spacing: -.075em; line-height: .96; }
+      h1 em { color: var(--cyan); font-style: normal; text-shadow: 0 0 40px rgba(97,230,255,.34); }
+      .hero__lead { position: relative; max-width: 610px; margin: 27px 0 34px; color: #c7d7e2; font-size: clamp(17px, 2vw, 21px); line-height: 1.65; }
+      .hero__actions { display: flex; position: relative; flex-wrap: wrap; gap: 12px; }
+      .button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 47px; padding: 0 18px; border: 1px solid transparent; border-radius: 13px; font-weight: 800; cursor: pointer; transition: transform .2s ease, box-shadow .2s ease, background .2s ease; }
+      .button:hover { transform: translateY(-2px); }
+      .button--primary { color: #06131f; background: var(--lime); box-shadow: 0 12px 40px rgba(199,255,112,.19); }
+      .button--secondary { border-color: rgba(135,208,255,.31); color: var(--ink); background: rgba(12,31,51,.55); }
+      .button svg { width: 17px; height: 17px; }
+
+      .signal-bar { display: flex; position: relative; flex-wrap: wrap; gap: 12px 30px; align-items: center; max-width: 1050px; margin-top: 72px; padding: 18px 22px; border: 1px solid var(--line); border-radius: 17px; background: rgba(7,18,31,.55); backdrop-filter: blur(18px); }
+      .signal-bar strong { color: var(--lime); font: 800 12px/1 var(--mono); letter-spacing: .1em; }
+      .signal-bar span { color: var(--muted); font-size: 14px; }
+      .signal-bar i { width: 1px; height: 19px; background: var(--line); }
+
+      main { max-width: 1240px; margin: auto; padding: 0 28px 112px; }
+      .section { padding-top: 96px; }
+      .section__tag { margin: 0 0 14px; color: var(--cyan); font: 800 11px/1 var(--mono); letter-spacing: .14em; }
+      .section h2 { max-width: 760px; margin: 0; font-size: clamp(32px, 4.6vw, 57px); letter-spacing: -.055em; line-height: 1.03; }
+      .section__intro { max-width: 660px; margin: 18px 0 34px; color: var(--muted); font-size: 17px; line-height: 1.66; }
+
+      .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+      .choice { position: relative; overflow: hidden; min-height: 355px; padding: 29px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); box-shadow: 0 18px 65px rgba(0,0,0,.14); }
+      .choice::before { position: absolute; right: -38px; bottom: -58px; width: 220px; height: 220px; border: 1px solid rgba(97,230,255,.2); border-radius: 50%; content: ""; }
+      .choice--official { border-color: rgba(199,255,112,.42); background: linear-gradient(145deg, rgba(35,64,61,.74), rgba(10,26,43,.88)); }
+      .choice__top { display: flex; position: relative; align-items: center; justify-content: space-between; gap: 15px; }
+      .choice__number { color: var(--lime); font: 800 13px/1 var(--mono); letter-spacing: .1em; }
+      .choice__badge { padding: 7px 10px; border-radius: 99px; color: #091522; background: var(--lime); font: 800 10px/1 var(--mono); letter-spacing: .08em; }
+      .choice h3 { position: relative; max-width: 410px; margin: 54px 0 13px; font-size: 30px; letter-spacing: -.04em; }
+      .choice p { position: relative; max-width: 430px; margin: 0; color: #bdcfda; font-size: 15px; line-height: 1.65; }
+      .choice__meta { display: flex; position: relative; gap: 9px; align-items: center; margin-top: 29px; color: var(--cyan); font: 800 11px/1.35 var(--mono); letter-spacing: .05em; }
+      .choice__meta::before { width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 50%; content: ""; }
+
+      .install-flow { display: grid; grid-template-columns: .8fr 1.2fr; gap: 20px; align-items: stretch; }
+      .phone-stage { display: grid; position: relative; min-height: 510px; overflow: hidden; place-items: center; border: 1px solid var(--line); border-radius: 24px; background: radial-gradient(circle at 50% 35%, rgba(78,209,255,.2), transparent 20%), linear-gradient(145deg, #0b233c, #07101d 68%); }
+      .phone-stage::before { position: absolute; inset: 15px; border: 1px solid rgba(158,219,255,.1); border-radius: 17px; content: ""; }
+      .phone { position: relative; width: 180px; height: 360px; padding: 11px; border: 2px solid #b9d9ed; border-radius: 31px; background: #020811; box-shadow: 0 0 0 8px rgba(106,200,255,.08), 0 38px 90px rgba(0,0,0,.55); transform: rotate(-8deg); }
+      .phone__notch { width: 56px; height: 12px; margin: 0 auto; border-radius: 0 0 10px 10px; background: #020811; }
+      .phone__screen { height: 318px; overflow: hidden; border-radius: 20px; background: linear-gradient(155deg, #197db3, #0b2346 44%, #102d7d); }
+      .phone__screen::before { display: block; width: 150%; height: 80%; margin: 45px 0 0 -36px; border-radius: 50%; background: radial-gradient(ellipse at 50% 40%, rgba(199,255,112,.66), transparent 8%), repeating-radial-gradient(ellipse at 50% 42%, rgba(97,230,255,.56) 0 1px, transparent 2px 19px); content: ""; transform: rotate(20deg); }
+      .phone-stage__caption { position: absolute; bottom: 29px; left: 29px; color: var(--muted); font: 800 10px/1.5 var(--mono); letter-spacing: .1em; }
+      .steps { display: grid; gap: 11px; }
+      .step { display: grid; grid-template-columns: 54px 1fr auto; gap: 15px; align-items: center; min-height: 93px; padding: 19px; border: 1px solid var(--line); border-radius: 16px; background: rgba(10,27,45,.62); }
+      .step__index { display: grid; width: 37px; height: 37px; place-items: center; border: 1px solid rgba(97,230,255,.45); border-radius: 50%; color: var(--cyan); font: 800 12px/1 var(--mono); }
+      .step h3 { margin: 0 0 5px; font-size: 16px; }
+      .step p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+      .step__check { color: var(--lime); font-size: 20px; }
+
+      .path-board { position: relative; overflow: hidden; margin-top: 20px; padding: 28px; border: 1px solid rgba(97,230,255,.25); border-radius: 21px; background: linear-gradient(120deg, rgba(11,39,62,.9), rgba(12,20,43,.85)); }
+      .path-board::after { position: absolute; top: -120%; right: 12%; width: 2px; height: 320%; background: linear-gradient(transparent, rgba(97,230,255,.75), transparent); content: ""; transform: rotate(28deg); animation: scan 5s linear infinite; }
+      .path-board__row { display: flex; position: relative; z-index: 1; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+      .path-board h3 { margin: 0; font-size: 18px; }
+      .path-board p { margin: 7px 0 0; color: var(--muted); font-size: 14px; }
+      .path-value { display: flex; position: relative; z-index: 1; gap: 11px; align-items: center; margin-top: 20px; padding: 14px 15px; border: 1px solid rgba(189,232,255,.17); border-radius: 12px; color: #e1f6ff; background: rgba(2,10,21,.7); font: 700 13px/1.45 var(--mono); word-break: break-all; }
+      .copy { flex: 0 0 auto; padding: 8px 10px; border: 1px solid rgba(199,255,112,.42); border-radius: 8px; color: var(--lime); background: transparent; font: 800 11px/1 var(--mono); cursor: pointer; }
+      .copy:hover { color: #06131f; background: var(--lime); }
+
+      .verify-grid { display: grid; grid-template-columns: 1.08fr .92fr; gap: 20px; }
+      .terminal, .security { border: 1px solid var(--line); border-radius: 20px; background: rgba(7,18,31,.72); }
+      .terminal { overflow: hidden; }
+      .terminal__bar { display: flex; align-items: center; gap: 7px; min-height: 45px; padding: 0 16px; border-bottom: 1px solid var(--line); color: var(--muted); font: 700 11px/1 var(--mono); }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff7c7c; box-shadow: 16px 0 #ffcb68, 32px 0 #79e77b; }
+      pre { margin: 0; padding: 24px; overflow: auto; color: #ceefff; font: 600 13px/1.8 var(--mono); }
+      .prompt { color: var(--lime); }
+      .security { display: grid; align-content: center; padding: 29px; background: linear-gradient(155deg, rgba(31,55,79,.74), rgba(8,17,31,.84)); }
+      .shield { display: grid; width: 53px; height: 53px; place-items: center; margin-bottom: 22px; border: 1px solid rgba(199,255,112,.72); border-radius: 17px; color: var(--lime); background: rgba(199,255,112,.08); font-size: 27px; }
+      .security h3 { margin: 0 0 11px; font-size: 25px; letter-spacing: -.035em; }
+      .security p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+      .security ul { display: grid; gap: 10px; margin: 22px 0 0; padding: 0; list-style: none; color: #c8d9e3; font-size: 14px; }
+      .security li { display: flex; gap: 9px; align-items: flex-start; }
+      .security li::before { margin-top: 3px; color: var(--lime); content: "✓"; }
+
+      .wireless { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      .wireless__panel { padding: 29px; border: 1px solid var(--line); border-radius: 21px; background: var(--surface); }
+      .wireless__panel h3 { margin: 0; font-size: 25px; letter-spacing: -.035em; }
+      .wireless__panel > p { margin: 10px 0 24px; color: var(--muted); line-height: 1.6; }
+      .mini-steps { display: grid; gap: 10px; counter-reset: item; padding: 0; list-style: none; }
+      .mini-steps li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); color: #cde0e9; font-size: 14px; line-height: 1.5; }
+      .mini-steps li::before { color: var(--cyan); font: 800 12px/1.55 var(--mono); content: counter(item, decimal-leading-zero); counter-increment: item; }
+      .warning { margin-top: 18px; padding: 14px 15px; border: 1px solid rgba(255,187,104,.37); border-radius: 12px; color: #ffe0ae; background: rgba(116,63,17,.2); font-size: 13px; line-height: 1.55; }
+      .warning strong { color: var(--orange); }
+
+      .rescue { display: grid; grid-template-columns: .85fr 1.15fr; gap: 21px; margin-top: 20px; padding: 26px 29px; border: 1px solid rgba(255,143,151,.33); border-radius: 19px; background: linear-gradient(115deg, rgba(71,24,39,.5), rgba(14,28,49,.75)); }
+      .rescue__title { color: #ffc5c8; font: 800 12px/1.5 var(--mono); letter-spacing: .09em; }
+      .rescue__title strong { display: block; margin-top: 8px; color: var(--ink); font: 700 25px/1.1 var(--sans); letter-spacing: -.04em; }
+      .rescue__body { color: #d1dce4; font-size: 14px; line-height: 1.65; }
+      kbd { display: inline-block; margin: 0 2px; padding: 2px 7px; border: 1px solid rgba(234,247,255,.36); border-bottom-width: 3px; border-radius: 6px; color: #fff; background: rgba(0,0,0,.27); font: 700 12px/1.25 var(--mono); }
+
+      .sources { display: flex; flex-wrap: wrap; gap: 12px; }
+      .source { display: flex; flex: 1 1 300px; gap: 13px; align-items: center; min-height: 79px; padding: 17px; border: 1px solid var(--line); border-radius: 15px; color: #d8edf7; background: rgba(11,25,41,.56); }
+      .source:hover { border-color: rgba(97,230,255,.65); color: var(--cyan); }
+      .source__arrow { margin-left: auto; color: var(--cyan); font-size: 20px; }
+      .source small, .source strong { display: block; }
+      .source small { margin-bottom: 4px; color: var(--muted); font: 700 10px/1 var(--mono); letter-spacing: .08em; }
+      .source strong { font-size: 14px; }
+
+      footer { max-width: 1240px; margin: auto; padding: 0 28px 45px; color: #6f899b; font: 700 11px/1.65 var(--mono); letter-spacing: .04em; }
+      footer::before { display: block; height: 1px; margin-bottom: 24px; background: var(--line); content: ""; }
+
+      @keyframes atmosphere { to { transform: scale(1.08) translate3d(1.5%, -1%, 0); filter: hue-rotate(16deg); } }
+      @keyframes rotate { to { transform: rotate(360deg); } }
+      @keyframes pulse { 75%, 100% { box-shadow: 0 0 0 12px rgba(199,255,112,0); } }
+      @keyframes scan { from { transform: translateY(-14%) rotate(28deg); } to { transform: translateY(62%) rotate(28deg); } }
+      @media (max-width: 780px) {
+        .nav { min-height: 67px; padding: 0 20px; }
+        .nav__links { display: none; }
+        .hero { padding: 62px 20px 62px; }
+        main { padding: 0 20px 82px; }
+        .choice-grid, .install-flow, .verify-grid, .wireless, .rescue { grid-template-columns: 1fr; }
+        .phone-stage { min-height: 370px; }
+        .phone { transform: scale(.78) rotate(-8deg); }
+        .section { padding-top: 70px; }
+        .signal-bar { margin-top: 47px; }
+        .signal-bar i { display: none; }
+        footer { padding: 0 20px 32px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#start">본문으로 건너뛰기</a>
+    <div class="glow" aria-hidden="true"></div>
+    <div class="grid" aria-hidden="true"></div>
+    <div class="noise" aria-hidden="true"></div>
+
+    <nav class="nav" aria-label="문서 탐색">
+      <a class="brand" href="#top"><span class="brand__mark">⌁</span> SCRCPY / SETUP</a>
+      <div class="nav__links">
+        <a href="#install">설치</a><a href="#verify">검증</a><a href="#wireless">무선 연결</a><a href="#sources">공식 출처</a>
+      </div>
+    </nav>
+
+    <header class="hero" id="top">
+      <div class="hero__orbit" aria-hidden="true"></div>
+      <p class="hero__eyebrow"><span class="pulse"></span>WINDOWS 10 / 11 · OFFICIAL-ONLY FLOW</p>
+      <h1>폰을 연결하기 전,<br /><em>설치부터</em> 확실하게.</h1>
+      <p class="hero__lead">이 안내는 scrcpy 설정 GUI에서 공식 scrcpy를 안전하게 설치하고, 원하는 경로에 보관한 뒤 무선으로 연결하는 가장 짧고 검증 가능한 흐름입니다.</p>
+      <div class="hero__actions">
+        <a class="button button--primary" href="#install">공식 설치 시작 <span aria-hidden="true">↓</span></a>
+        <a class="button button--secondary" href="https://github.com/Genymobile/scrcpy/releases/latest" target="_blank" rel="noreferrer">공식 최신 릴리스 열기 <span aria-hidden="true">↗</span></a>
+      </div>
+      <div class="signal-bar" aria-label="설치 안전 장치">
+        <strong>SAFE BY DESIGN</strong><i></i>
+        <span>공식 소스만</span><i></i><span>사용자 승인 후 다운로드</span><i></i><span>SHA-256 대조</span><i></i><span>기존 설치 비파괴</span>
+      </div>
+    </header>
+
+    <main id="start">
+      <section class="section" id="install" aria-labelledby="install-title">
+        <p class="section__tag">01 / INSTALL ROUTE</p>
+        <h2 id="install-title">원하는 방법을 고르세요.<br />기준은 언제나 공식 소스입니다.</h2>
+        <p class="section__intro">처음이라면 GUI 안의 <strong>공식 최신 버전 설치</strong>가 가장 간단합니다. 이미 명령줄 설치를 선호한다면 공식 Windows 문서가 안내하는 패키지 관리자도 사용할 수 있습니다.</p>
+        <div class="choice-grid">
+          <article class="choice choice--official">
+            <div class="choice__top"><span class="choice__number">ROUTE 01</span><span class="choice__badge">추천</span></div>
+            <h3>설정 GUI에서<br />공식 ZIP 설치</h3>
+            <p><code>scrcpy-gui.bat</code>를 열고 왼쪽 <strong>설정</strong> 탭에서 <strong>공식 최신 버전 설치</strong>를 누르세요. Genymobile의 GitHub Releases만 조회하며, 다운로드 전 출처·버전·용량·SHA-256·설치 경로를 보여줍니다.</p>
+            <div class="choice__meta">승인하지 않으면 다운로드하지 않음</div>
+          </article>
+          <article class="choice">
+            <div class="choice__top"><span class="choice__number">ROUTE 02</span></div>
+            <h3>이미 설치했거나<br />직접 압축을 풀었을 때</h3>
+            <p>공식 릴리스에서 Windows 64-bit ZIP을 받은 뒤 원하는 폴더에 풀고, GUI의 <strong>찾아보기</strong>에서 <code>scrcpy.exe</code> 또는 <code>adb.exe</code>를 지정하세요. GUI는 후보 중 가장 높은 버전을 선택합니다.</p>
+            <div class="choice__meta">PATH의 구버전을 우선하지 않음</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="flow-title">
+        <p class="section__tag">02 / GUIDED INSTALL</p>
+        <h2 id="flow-title">5단계면 충분합니다.</h2>
+        <p class="section__intro">설치 과정은 scrcpy를 실행하지 않습니다. 모든 준비가 끝난 뒤에만 하단 <strong>실행</strong> 버튼으로 폰 연결을 시작합니다.</p>
+        <div class="install-flow">
+          <div class="phone-stage" aria-label="안드로이드 폰과 PC 연결을 나타내는 장식">
+            <div class="phone"><div class="phone__notch"></div><div class="phone__screen"></div></div>
+            <span class="phone-stage__caption">ANDROID ⇄ WINDOWS<br />SCREEN / CONTROL / AUDIO</span>
+          </div>
+          <div class="steps">
+            <article class="step"><span class="step__index">01</span><div><h3>GUI 열기</h3><p><code>scrcpy-gui.bat</code>를 실행하고 왼쪽 <strong>설정</strong>을 선택합니다.</p></div><span class="step__check">✓</span></article>
+            <article class="step"><span class="step__index">02</span><div><h3>공식 최신 버전 설치</h3><p>다운로드 목록이나 URL을 직접 입력하지 않습니다. GitHub의 공식 릴리스만 사용합니다.</p></div><span class="step__check">✓</span></article>
+            <article class="step"><span class="step__index">03</span><div><h3>설치 위치 선택</h3><p>아래 기본 경로를 그대로 쓰거나, 드라이브·폴더를 직접 선택합니다.</p></div><span class="step__check">✓</span></article>
+            <article class="step"><span class="step__index">04</span><div><h3>표시된 정보 확인 후 승인</h3><p>버전, ZIP 파일명, 출처, SHA-256, 용량과 최종 경로를 확인하고 <strong>예</strong>를 누릅니다.</p></div><span class="step__check">✓</span></article>
+            <article class="step"><span class="step__index">05</span><div><h3>검증·압축 해제·기억</h3><p>해시가 맞을 때만 안전한 경로로 압축을 풀고, 실행 파일 경로를 다음 실행에도 기억합니다.</p></div><span class="step__check">✓</span></article>
+          </div>
+        </div>
+        <div class="path-board">
+          <div class="path-board__row"><div><h3>기본 설치 위치</h3><p>버전별 새 폴더에 설치합니다. 기존 설치를 덮어쓰지 않습니다.</p></div><span class="choice__badge">변경 가능</span></div>
+          <div class="path-value"><span id="path">%LOCALAPPDATA%\scrcpy-gui\scrcpy\&lt;version&gt;</span><button class="copy" type="button" data-copy="%LOCALAPPDATA%\scrcpy-gui\scrcpy\&lt;version&gt;">경로 복사</button></div>
+        </div>
+      </section>
+
+      <section class="section" id="verify" aria-labelledby="verify-title">
+        <p class="section__tag">03 / TRUST, THEN RUN</p>
+        <h2 id="verify-title">다운로드는 끝이 아니라,<br />검증이 끝나야 합니다.</h2>
+        <p class="section__intro">GUI 설치는 승인 전에 공식 릴리스가 제공한 SHA-256을 보여주고 다운로드 파일과 대조합니다. 수동으로 ZIP을 받았다면 Windows에서도 같은 값을 직접 확인할 수 있습니다.</p>
+        <div class="verify-grid">
+          <div class="terminal" aria-label="PowerShell 해시 확인 예시">
+            <div class="terminal__bar"><span class="dot" aria-hidden="true"></span><span style="margin-left:31px">PowerShell · SHA-256 CHECK</span></div>
+            <pre><span class="prompt">PS&gt;</span> Get-FileHash .\scrcpy-win64-v4.1.zip -Algorithm SHA256
+
+Algorithm       Hash                                      Path
+---------       ----                                      ----
+SHA256          &lt;GitHub Releases에 표시된 공식 SHA-256&gt;  .\scrcpy-win64-v4.1.zip
+
+<span class="prompt">PS&gt;</span> .\scrcpy.exe --version
+scrcpy 4.1</pre>
+          </div>
+          <aside class="security">
+            <div class="shield" aria-hidden="true">✓</div>
+            <h3>허용하는 출처는 하나입니다.</h3>
+            <p>설정 GUI의 자동 설치는 <strong>Genymobile/scrcpy</strong> 공식 GitHub 릴리스의 정확한 Windows 64-bit ZIP URL만 허용합니다.</p>
+            <ul><li>URL 직접 입력 없음</li><li>제3자 미러 없음</li><li>자동 백그라운드 업데이트 없음</li><li>해시가 없거나 다르면 설치 중단</li></ul>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section" id="wireless" aria-labelledby="wireless-title">
+        <p class="section__tag">04 / WIRELESS PAIRING</p>
+        <h2 id="wireless-title">케이블 없이 시작하는<br />무선 디버깅 페어링.</h2>
+        <p class="section__intro">Android 11 이상에서는 무선 디버깅 페어링을 한 번 완료하면 이후 <code>adb devices</code>가 mDNS로 기기를 자동 발견합니다.</p>
+        <div class="wireless">
+          <article class="wireless__panel">
+            <h3>폰에서 할 일</h3>
+            <p>폰 설정을 바꾸는 단계입니다. 개발자 옵션과 무선 디버깅을 직접 켜는 데 동의한 경우에만 진행하세요.</p>
+            <ol class="mini-steps"><li><span><strong>설정 → 개발자 옵션</strong>에서 <strong>무선 디버깅</strong>을 켭니다.</span></li><li><span><strong>무선 디버깅</strong> 항목을 열고 <strong>페어링 코드로 기기 페어링</strong>을 누릅니다.</span></li><li><span>표시되는 <strong>IP:포트</strong>와 6자리 코드를 PC에 준비합니다.</span></li></ol>
+          </article>
+          <article class="wireless__panel">
+            <h3>PC에서 할 일</h3>
+            <p>공식 scrcpy 배포판에는 일반적으로 adb가 함께 포함됩니다. 페어링을 마친 뒤에는 별도 <code>adb connect</code>가 필요 없습니다.</p>
+            <div class="terminal" style="border-radius:13px"><pre><span class="prompt">PS&gt;</span> adb pair 192.168.0.5:41234 123456
+
+<span class="prompt">PS&gt;</span> adb devices
+List of devices attached
+&lt;자동 발견된 기기&gt;  device</pre></div>
+            <div class="warning"><strong>주의:</strong> <code>adb tcpip 5555</code> 고정 포트 방식은 안내하지 않습니다. 무선 디버깅 포트는 재접속마다 바뀔 수 있고, USB가 필요해질 수 있습니다.</div>
+          </article>
+        </div>
+        <aside class="rescue">
+          <div class="rescue__title">CONTROL SAFETY<strong>입력이 갇혔을 때</strong></div>
+          <div class="rescue__body"><strong>마우스 방식</strong>을 <code>uhid</code> 또는 <code>aoa</code>로 선택하면 포인터가 scrcpy 창에 캡처될 수 있습니다. 이 옵션을 켜기 전에 탈출법을 기억하세요: <kbd>Alt</kbd> 또는 <kbd>Windows</kbd> 키를 누르면 캡처를 풀고, 다시 누르면 재캡처합니다. 전체화면은 <kbd>Ctrl</kbd> + <kbd>F</kbd>, 창 종료는 <kbd>Ctrl</kbd> + <kbd>Q</kbd>입니다.</div>
+        </aside>
+      </section>
+
+      <section class="section" id="sources" aria-labelledby="sources-title">
+        <p class="section__tag">05 / PRIMARY SOURCES</p>
+        <h2 id="sources-title">공식 문서에서 다시 확인하세요.</h2>
+        <p class="section__intro">릴리스 버전과 SHA-256은 바뀔 수 있으므로, 설치 전에는 항상 아래의 공식 최신 릴리스 페이지를 기준으로 확인합니다. 이 안내를 조회한 시점의 최신 정식 릴리스는 v4.1입니다.</p>
+        <div class="sources">
+          <a class="source" href="https://github.com/Genymobile/scrcpy/releases/latest" target="_blank" rel="noreferrer"><div><small>GENYMOBILE / GITHUB</small><strong>scrcpy 최신 공식 릴리스</strong></div><span class="source__arrow" aria-hidden="true">↗</span></a>
+          <a class="source" href="https://github.com/Genymobile/scrcpy/blob/master/doc/windows.md" target="_blank" rel="noreferrer"><div><small>GENYMOBILE / DOCUMENTATION</small><strong>Windows 설치·실행 공식 문서</strong></div><span class="source__arrow" aria-hidden="true">↗</span></a>
+          <a class="source" href="https://github.com/Genymobile/scrcpy" target="_blank" rel="noreferrer"><div><small>GENYMOBILE / SOURCE</small><strong>scrcpy 공식 저장소</strong></div><span class="source__arrow" aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+    </main>
+
+    <footer>SCRCPY SETUP GUIDE · 공식 릴리스 확인 → 경로 선택 → 승인 → SHA-256 검증 → 실행. 이 파일은 설치 프로그램이 아니며, 폰 설정을 자동으로 변경하지 않습니다.</footer>
+    <script>
+      for (const button of document.querySelectorAll('[data-copy]')) {
+        button.addEventListener('click', async () => {
+          const value = button.dataset.copy;
+          try {
+            await navigator.clipboard.writeText(value);
+            button.textContent = '복사됨 ✓';
+          } catch {
+            button.textContent = '직접 복사하세요';
+          }
+          window.setTimeout(() => { button.textContent = '경로 복사'; }, 1800);
+        });
+      }
+    </script>
+  </body>
+</html>
