@@ -622,8 +622,10 @@ Add-Type -AssemblyName WindowsBase
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
           <Ellipse x:Name="DevDot" Width="9" Height="9" Fill="#4A4A52" Margin="0,0,9,0"/>
           <Button x:Name="BtnPair" Content="무선 페어링" Style="{StaticResource Ghost}" Margin="0,0,9,0"/>
-          <ComboBox x:Name="CmbDevice" Width="260" Style="{StaticResource DarkCombo}"/>
+          <ComboBox x:Name="CmbDevice" Width="230" Style="{StaticResource DarkCombo}"/>
           <Button x:Name="BtnRefresh" Content="새로고침" Style="{StaticResource Ghost}" Margin="9,0,0,0"/>
+          <Button x:Name="BtnDiscover" Content="기기 찾기" Style="{StaticResource Ghost}" Margin="6,0,0,0"
+                  ToolTip="폰을 같은 Wi-Fi 에서 찾아 자동으로 연결합니다 (케이블·폰 조작 불필요)"/>
         </StackPanel>
       </Grid>
     </Border>
@@ -687,6 +689,7 @@ $CmbDevice     = $win.FindName('CmbDevice')
 $DevDot        = $win.FindName('DevDot')
 $BtnPair       = $win.FindName('BtnPair')
 $BtnRefresh    = $win.FindName('BtnRefresh')
+$BtnDiscover   = $win.FindName('BtnDiscover')
 $CmbPreset     = $win.FindName('CmbPreset')
 $TxtPresetName = $win.FindName('TxtPresetName')
 $BtnPresetSave = $win.FindName('BtnPresetSave')
@@ -705,6 +708,9 @@ $script:ready   = $false
 $script:powerOptionsUpdating = $false
 $script:stayAwakeBeforeScreenOff = $null
 $script:noControlBeforeScreenOff = $null
+# 기기 콤보는 사람이 읽을 라벨을 보여주고, scrcpy 에는 진짜 기기 ID 를 넘긴다.
+$script:DeviceIdByLabel = @{}
+$script:OfflineLabels   = [System.Collections.Generic.HashSet[string]]::new()
 
 $StyleText  = $win.FindResource('DarkText')
 $StyleCombo = $win.FindResource('DarkCombo')
@@ -974,8 +980,9 @@ function Get-ScrcpyArgs {
     $list = [System.Collections.Generic.List[string]]::new()
     $screenOffMode = [bool]$Controls['turn-screen-off'].IsChecked
 
-    if ($CmbDevice.SelectedItem -and $CmbDevice.SelectedItem -ne '(자동)') {
-        $list.Add('--serial=' + $CmbDevice.SelectedItem)
+    $deviceLabel = [string]$CmbDevice.SelectedItem
+    if ($deviceLabel -and $deviceLabel -ne '(자동)' -and $script:DeviceIdByLabel.ContainsKey($deviceLabel)) {
+        $list.Add('--serial=' + $script:DeviceIdByLabel[$deviceLabel])
     }
     foreach ($opt in $OPTIONS) {
         # 화면을 직접 끄는 모드에서는 이 둘이 의미가 없다. 충전 여부나 시간을
@@ -1093,33 +1100,193 @@ function Get-ScrcpyOptionConflicts {
     return @()
 }
 
-function Refresh-Devices {
-    $sel = $CmbDevice.SelectedItem
-    $CmbDevice.Items.Clear()
-    [void]$CmbDevice.Items.Add('(자동)')
-    $states = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+# adb devices -l 한 줄 = 기기 하나. 헤더('List of devices attached')와 데몬 메시지가 섞여 나오므로
+# 두 번째 낱말이 실제 상태값일 때만 기기로 인정한다.
+function Get-AdbDevices {
+    $list = [System.Collections.Generic.List[object]]::new()
     try {
-        foreach ($line in (& $ADB_EXE devices 2>$null)) {
-            if ($line -match '^(\S+)\s+(\S+)\s*$') {
-                $serial = $Matches[1]
-                $state = $Matches[2]
-                if ($state -eq 'device') { [void]$CmbDevice.Items.Add($serial) }
-                else { [void]$states.Add($state) }
-            }
+        foreach ($line in (& $ADB_EXE devices -l 2>$null)) {
+            if ([string]$line -notmatch '^(?<id>\S+)\s+(?<state>device|offline|unauthorized|authorizing|connecting|recovery|sideload|bootloader)\b') { continue }
+            $id = $Matches['id']; $state = $Matches['state']
+            $model = if ([string]$line -match '\smodel:(\S+)') { $Matches[1] } else { '' }
+            $list.Add([pscustomobject]@{ Id = $id; State = $state; Model = $model })
         }
     } catch { }
+    return $list
+}
+
+# 기기 목록은 '지금 붙어 있는 것'과 '전에 붙었던 것'을 함께 보여준다.
+# 과거 기기를 지우지 않는 이유: 목록에서 사라지면 재연결할 대상을 고를 수조차 없다.
+# (이 폰은 mDNS 이름으로 잡혀서 그 이름으로 adb connect 가 안 된다 — 재연결은 [기기 찾기]가 맡는다)
+function Refresh-Devices {
+    $sel = [string]$CmbDevice.SelectedItem
+    $found = Get-AdbDevices
+    $online = @($found | Where-Object { $_.State -eq 'device' })
+
+    # 붙어 있는 기기를 config 에 적어둔다 → 다음에 꺼져 있어도 목록에 남는다
+    $known = @{}
+    if ($script:Config.ContainsKey('devices') -and $script:Config['devices']) {
+        foreach ($k in $script:Config['devices'].Keys) { $known[$k] = $script:Config['devices'][$k] }
+    }
+    foreach ($d in $online) {
+        $known[$d.Id] = @{ model = $d.Model; lastSeen = (Get-Date).ToString('yyyy-MM-dd HH:mm') }
+    }
+    if ($known.Count) {
+        $script:Config['devices'] = $known
+        $null = Write-Config $script:Config
+    }
+
+    $script:DeviceIdByLabel = @{}
+    $script:OfflineLabels = [System.Collections.Generic.HashSet[string]]::new()
+    $CmbDevice.Items.Clear()
+    [void]$CmbDevice.Items.Add('(자동)')
+
+    foreach ($d in $online) {
+        $label = if ($d.Model) { "$($d.Model)  ·  $($d.Id)" } else { $d.Id }
+        $script:DeviceIdByLabel[$label] = $d.Id
+        [void]$CmbDevice.Items.Add($label)
+    }
+
+    $onlineIds = @($online | ForEach-Object { $_.Id })
+    foreach ($id in ($known.Keys | Sort-Object)) {
+        if ($onlineIds -contains $id) { continue }
+        $model = [string]$known[$id]['model']
+        $label = if ($model) { "(오프라인) $model  ·  $id" } else { "(오프라인) $id" }
+        $script:DeviceIdByLabel[$label] = $id
+        [void]$script:OfflineLabels.Add($label)
+        [void]$CmbDevice.Items.Add($label)
+    }
+
     if ($sel -and $CmbDevice.Items.Contains($sel)) { $CmbDevice.SelectedItem = $sel }
     else { $CmbDevice.SelectedIndex = 0 }
 
-    $n = $CmbDevice.Items.Count - 1
+    $states = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($d in ($found | Where-Object { $_.State -ne 'device' })) { [void]$states.Add($d.State) }
+
     if (-not $SCRCPY_EXE) {
         $DevDot.Fill = $ColGray
         $LblStatus.Text = 'scrcpy.exe 를 찾지 못했습니다 — 왼쪽 [설정] 에서 위치를 지정하세요'
     }
-    elseif ($n -gt 0) { $DevDot.Fill = $ColGreen; $LblStatus.Text = "기기 $n 대 연결됨" }
+    elseif ($online.Count -gt 0) { $DevDot.Fill = $ColGreen; $LblStatus.Text = "기기 $($online.Count) 대 연결됨" }
     elseif ($states.Contains('unauthorized')) { $DevDot.Fill = $ColGray; $LblStatus.Text = '무선 디버깅 허용 대기 — 폰에서 허용한 뒤 [새로고침]을 누르세요' }
-    elseif ($states.Contains('offline')) { $DevDot.Fill = $ColGray; $LblStatus.Text = '기기가 offline — 폰의 무선 디버깅을 껐다 켠 뒤 [새로고침]을 누르세요' }
-    else              { $DevDot.Fill = $ColGray;  $LblStatus.Text = '연결된 기기 없음 — 폰의 무선 디버깅을 확인하세요' }
+    elseif ($states.Contains('offline')) { $DevDot.Fill = $ColGray; $LblStatus.Text = '기기가 offline — [기기 찾기]를 누르거나 폰의 무선 디버깅을 껐다 켜세요' }
+    else              { $DevDot.Fill = $ColGray;  $LblStatus.Text = '연결된 기기 없음 — [기기 찾기]를 눌러보세요' }
+}
+
+# 상태줄을 바꾼 뒤 화면에 실제로 그려지게 한다. (찾기 과정이 몇 초 걸려서 단계가 보여야 한다)
+function Update-Ui {
+    param([string]$Text)
+    if ($Text) { $LblStatus.Text = $Text }
+    $win.Dispatcher.Invoke([action] {}, [Windows.Threading.DispatcherPriority]::Background)
+}
+
+function Wait-Ui {
+    param([int]$Milliseconds)
+    $end = (Get-Date).AddMilliseconds($Milliseconds)
+    while ((Get-Date) -lt $end) {
+        $win.Dispatcher.Invoke([action] {}, [Windows.Threading.DispatcherPriority]::Background)
+        Start-Sleep -Milliseconds 50
+    }
+}
+
+# 포트가 열려 있는지만 본다. adb connect 는 안 열린 포트에서 몇 초씩 매달리므로 먼저 걸러낸다.
+function Test-TcpPort {
+    param([string]$IpAddress, [int]$Port, [int]$TimeoutMs = 1000)
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        if (-not $client.ConnectAsync($IpAddress, $Port).Wait($TimeoutMs)) { return $false }
+        return $client.Connected
+    } catch {
+        return $false
+    } finally {
+        $client.Dispose()
+    }
+}
+
+# 같은 Wi-Fi 에서 폰을 찾아 붙인다. 폰을 만지지 않고 되는 경로부터 순서대로 시도한다.
+#   ① adb devices        — adb 데몬이 mDNS 로 알아서 붙는다 (평소엔 여기서 끝난다)
+#   ② adb mdns services  — 데몬이 광고를 주울 때까지 잠깐 기다리며 IP:포트를 모은다
+#   ③ TCP probe          — 살아 있는 후보만 남긴다 (죽은 주소로 connect 하면 오래 매달린다)
+#   ④ adb connect        — 살아 있는 것에만 붙인다
+# ※ 이 폰은 기기 ID 가 mDNS 이름이라 그 이름으로는 connect 가 안 된다(실측). 그래서 ②가 필요하다.
+function Find-WirelessDevices {
+    if (-not $ADB_EXE) {
+        [void][Windows.MessageBox]::Show('adb.exe 를 찾을 수 없습니다. [설정] 에서 지정하거나 [공식 최신 버전 설치]를 누르세요.', '기기 찾기', 'OK', 'Error')
+        return
+    }
+
+    $BtnDiscover.IsEnabled = $false
+    $BtnRefresh.IsEnabled = $false
+    try {
+        Update-Ui '기기 찾는 중 — 이미 연결돼 있는지 확인합니다…'
+        if (@(Get-AdbDevices | Where-Object { $_.State -eq 'device' }).Count -gt 0) {
+            Refresh-Devices
+            $LblStatus.Text = '이미 연결돼 있습니다 — 바로 [실행] 하세요'
+            return
+        }
+
+        # 데몬이 mDNS 광고를 줍는 데 시간이 걸린다. 즉시 한 번 보고 없으면 잠깐씩 기다리며 다시 본다.
+        $candidates = [System.Collections.Generic.List[string]]::new()
+        $deadline = (Get-Date).AddSeconds(8)
+        do {
+            Update-Ui '기기 찾는 중 — 같은 Wi-Fi 에서 폰을 검색합니다…'
+            try {
+                foreach ($line in (& $ADB_EXE mdns services 2>$null)) {
+                    if ([string]$line -match '(?<ip>\d{1,3}(?:\.\d{1,3}){3}):(?<port>\d{1,5})\s*$') {
+                        $endpoint = "$($Matches['ip']):$($Matches['port'])"
+                        if (-not $candidates.Contains($endpoint)) { [void]$candidates.Add($endpoint) }
+                        $fallback = "$($Matches['ip']):5555"
+                        if (-not $candidates.Contains($fallback)) { [void]$candidates.Add($fallback) }
+                    }
+                }
+            } catch { }
+            if ($candidates.Count) { break }
+            Wait-Ui 700
+        } while ((Get-Date) -lt $deadline)
+
+        if (-not $candidates.Count) {
+            Refresh-Devices
+            $LblStatus.Text = '폰을 찾지 못했습니다 — 폰에서 무선 디버깅을 켜고(퀵설정 타일) 같은 Wi-Fi 인지 확인하세요'
+            return
+        }
+
+        $connected = 0
+        foreach ($endpoint in $candidates) {
+            # $host 는 PowerShell 예약 변수라 여기에 대입하면 실행이 깨진다. 다른 이름을 쓴다.
+            $hostAddress, $portText = $endpoint -split ':'
+            Update-Ui "기기 찾는 중 — $endpoint 응답 확인…"
+            if (-not (Test-TcpPort -IpAddress $hostAddress -Port ([int]$portText))) { continue }
+
+            Update-Ui "기기 찾는 중 — $endpoint 에 연결합니다…"
+            # ProcessStartInfo.ArgumentList 는 주소를 셸로 재해석하지 않고 adb 에 그대로 넘긴다.
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $ADB_EXE
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.ArgumentList.Add('connect')
+            $psi.ArgumentList.Add($endpoint)
+            try {
+                $proc = [System.Diagnostics.Process]::Start($psi)
+                $out = $proc.StandardOutput.ReadToEnd() + $proc.StandardError.ReadToEnd()
+                $proc.WaitForExit()
+                if ($proc.ExitCode -eq 0 -and $out -notmatch 'cannot|failed|refused') { $connected++ }
+            } catch { }
+        }
+
+        Refresh-Devices
+        if (@(Get-AdbDevices | Where-Object { $_.State -eq 'device' }).Count -gt 0) {
+            $LblStatus.Text = '연결됐습니다 — [실행] 을 누르세요'
+        } elseif ($connected -gt 0) {
+            $LblStatus.Text = '연결은 됐지만 아직 목록에 안 잡힙니다 — 폰에서 [허용] 을 누른 뒤 [새로고침] 하세요'
+        } else {
+            $LblStatus.Text = '폰을 찾았지만 연결하지 못했습니다 — 페어링이 풀렸을 수 있습니다. [무선 페어링] 을 해보세요'
+        }
+    } finally {
+        $BtnDiscover.IsEnabled = $true
+        $BtnRefresh.IsEnabled = $true
+    }
 }
 
 # 페어링은 폰에서 사용자가 연 일회용 코드가 있어야만 가능하다. 코드는 메모리에서만 사용하고 저장하지 않는다.
@@ -1440,6 +1607,7 @@ $NavList.Add_SelectionChanged({
 })
 
 $BtnRefresh.Add_Click({ Refresh-Devices; Sync-PhonePrefs; Update-Preview })
+$BtnDiscover.Add_Click({ Find-WirelessDevices; Sync-PhonePrefs; Update-Preview })
 $BtnPair.Add_Click({ Start-WirelessPairing })
 $CmbDevice.Add_SelectionChanged({ Update-Preview })
 $TxtExtra.Add_TextChanged({ Update-Preview })
@@ -1534,6 +1702,13 @@ endlocal
 })
 
 $BtnRun.Add_Click({
+    # 지금 안 붙어 있는 기기를 골라둔 채 실행하면 scrcpy 가 그냥 실패한다. 먼저 붙이도록 안내한다.
+    if ($script:OfflineLabels.Contains([string]$CmbDevice.SelectedItem)) {
+        [void][Windows.MessageBox]::Show(
+            "고른 기기가 지금 연결돼 있지 않습니다.`n`n[기기 찾기] 를 눌러 연결한 뒤 실행하세요.",
+            'scrcpy 설정', 'OK', 'Warning')
+        return
+    }
     if (-not $SCRCPY_EXE -or -not (Test-Path $SCRCPY_EXE)) {
         [void][Windows.MessageBox]::Show(
             "scrcpy.exe 를 찾을 수 없습니다.`n`n설정 탭에서 [공식 최신 버전 설치]를 누르거나, 이미 설치했다면 [찾아보기]로 scrcpy.exe를 선택하세요.",
