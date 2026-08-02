@@ -3,7 +3,7 @@ param(
 )
 
 # =============================================================
-#  scrcpy 설정 GUI  v0.1.0-beta   (Windows / PowerShell 7 + WPF)
+#  scrcpy 설정 GUI  v0.1.1-beta   (Windows / PowerShell 7 + WPF)
 #  https://github.com/ai-blink/scrcpy-gui                MIT License
 #
 #  ★ 옵션을 추가/변경하려면 아래 $OPTIONS 표에 한 줄만 넣으면 됩니다.
@@ -229,9 +229,9 @@ $OPTIONS = @(
     @{ Group='창';   Key='window-height';  Label='창 높이';       Type='text';  Default='';     Arg='--window-height={0}';  Hint='픽셀. 비우면 자동' },
 
     # ---------------- 전원 ----------------
-    @{ Group='전원'; Key='turn-screen-off'; Label='폰 화면 끄고 쓰기'; Type='check'; Default=$false; Arg='--turn-screen-off'; Hint='폰 화면은 꺼두고 PC로만 조작 (배터리 절약)' },
-    @{ Group='전원'; Key='stay-awake';      Label='잠들지 않게';   Type='check'; Default=$false; Arg='--stay-awake';        Hint='충전 중일 때 폰이 안 잠김' },
-    @{ Group='전원'; Key='screen-off-timeout'; Label='화면 꺼짐 시간'; Type='text'; Default='500'; Arg='--screen-off-timeout={0}'; Hint='초 단위. scrcpy 실행 중에만 적용' },
+    @{ Group='전원'; Key='turn-screen-off'; Label='화면 끄고 PC로 사용'; Type='check'; Default=$false; Arg='--turn-screen-off'; Hint='화면만 끄고 PC 제어·활성 상태를 자동 유지합니다. 폰의 물리 전원 버튼을 누르면 화면이 다시 켜집니다.' },
+    @{ Group='전원'; Key='stay-awake';      Label='충전 중 활성 유지'; Type='check'; Default=$false; Arg='--stay-awake';        Hint='화면을 켠 채 오래 쓸 때만 사용합니다. 충전 중일 때만 작동' },
+    @{ Group='전원'; Key='screen-off-timeout'; Label='화면 자동 꺼짐 시간'; Type='text'; Default='500'; Arg='--screen-off-timeout={0}'; Hint='일반 사용 중 자동으로 화면을 끄는 시간(초). 화면 끄고 PC로 사용 중에는 적용하지 않음' },
     @{ Group='전원'; Key='no-power-on';     Label='시작할 때 안 켜기'; Type='check'; Default=$false; Arg='--no-power-on';   Hint='실행해도 폰 화면을 깨우지 않음' },
     @{ Group='전원'; Key='power-off-on-close'; Label='닫을 때 폰 화면 끄기'; Type='check'; Default=$false; Arg='--power-off-on-close'; Hint='창을 닫으면 폰도 화면 꺼짐' },
     @{ Group='전원'; Key='disable-screensaver'; Label='PC 화면보호기 끄기'; Type='check'; Default=$false; Arg='--disable-screensaver'; Hint='보는 동안 PC가 안 잠김' },
@@ -700,6 +700,9 @@ $Controls = @{}
 $Pages    = @{}
 $script:Presets = @{}
 $script:ready   = $false
+$script:powerOptionsUpdating = $false
+$script:stayAwakeBeforeScreenOff = $null
+$script:noControlBeforeScreenOff = $null
 
 $StyleText  = $win.FindResource('DarkText')
 $StyleCombo = $win.FindResource('DarkCombo')
@@ -967,16 +970,25 @@ foreach ($group in ($OPTIONS.Group | Select-Object -Unique)) {
 
 function Get-ScrcpyArgs {
     $list = [System.Collections.Generic.List[string]]::new()
+    $screenOffMode = [bool]$Controls['turn-screen-off'].IsChecked
 
     if ($CmbDevice.SelectedItem -and $CmbDevice.SelectedItem -ne '(자동)') {
         $list.Add('--serial=' + $CmbDevice.SelectedItem)
     }
     foreach ($opt in $OPTIONS) {
+        # 화면을 직접 끄는 모드에서는 이 둘이 의미가 없다. 충전 여부나 시간을
+        # 사용자가 조합해서 기억하지 않아도 되도록, 단일 모드가 활성 유지를 맡는다.
+        if ($screenOffMode -and $opt.Key -in @('stay-awake', 'screen-off-timeout')) { continue }
         $c = $Controls[$opt.Key]
         switch ($opt.Type) {
             'phonepref' { }   # 폰 설정이라 scrcpy 명령어에는 안 들어감
             'path'      { }   # 실행 파일 위치라 scrcpy 명령어에는 안 들어감
-            'check'     { if ($c.IsChecked) { $list.Add($opt.Arg) } }
+            'check'     {
+                if ($c.IsChecked) {
+                    $list.Add($opt.Arg)
+                    if ($opt.Key -eq 'turn-screen-off') { $list.Add('--keep-active') }
+                }
+            }
             'combo'     { $v = [string]$c.SelectedItem; if ($v -and $v -ne '(기본)') { $list.Add($opt.Arg -f $v) } }
             'editcombo' {
                 # 목록에서 고른 직후엔 '1920  FHD…' 형태일 수 있으므로 값(첫 토막)만 쓴다
@@ -1000,6 +1012,83 @@ function Format-Cmd {
 function Update-Preview {
     if (-not $script:ready) { return }
     $TxtCmd.Text = Format-Cmd (Get-ScrcpyArgs)
+}
+
+# '화면 끄고 PC로 사용'은 화면만 끄고 기기를 깨운 상태로 유지하는 하나의 작업이다.
+# 하위 옵션을 같이 켜게 두면 충전 여부나 적용 순서를 사용자가 외워야 하므로,
+# 이 모드에서는 중복·무의미한 옵션을 비활성화한다. 기존 선택은 모드를 끄면 복원한다.
+function Update-PowerOptionState {
+    if ($script:powerOptionsUpdating -or -not $Controls.ContainsKey('turn-screen-off')) { return }
+
+    $script:powerOptionsUpdating = $true
+    try {
+        $screenOffMode = [bool]$Controls['turn-screen-off'].IsChecked
+        $stayAwake = $Controls['stay-awake']
+        $timeout = $Controls['screen-off-timeout']
+        $noControl = $Controls['no-control']
+
+        if ($screenOffMode) {
+            if ($null -eq $script:stayAwakeBeforeScreenOff) {
+                $script:stayAwakeBeforeScreenOff = [bool]$stayAwake.IsChecked
+            }
+            $stayAwake.IsChecked = $false
+            $stayAwake.IsEnabled = $false
+            $stayAwake.Opacity = 0.45
+            $stayAwake.ToolTip = '화면 끄고 PC로 사용이 활성 상태에서는 활성 유지가 자동으로 적용됩니다.'
+
+            $timeout.IsEnabled = $false
+            $timeout.Opacity = 0.45
+            $timeout.ToolTip = '화면 끄고 PC로 사용은 즉시 화면을 끄므로 자동 꺼짐 시간을 사용하지 않습니다.'
+
+            if ($null -eq $script:noControlBeforeScreenOff) {
+                $script:noControlBeforeScreenOff = [bool]$noControl.IsChecked
+            }
+            $noControl.IsChecked = $false
+            $noControl.IsEnabled = $false
+            $noControl.Opacity = 0.45
+            $noControl.ToolTip = '화면 끄고 PC로 사용은 PC 제어가 필요하므로 보기 전용을 함께 사용할 수 없습니다.'
+        } else {
+            $stayAwake.IsEnabled = $true
+            $stayAwake.Opacity = 1
+            $stayAwake.ToolTip = $null
+            if ($null -ne $script:stayAwakeBeforeScreenOff) {
+                $stayAwake.IsChecked = $script:stayAwakeBeforeScreenOff
+                $script:stayAwakeBeforeScreenOff = $null
+            }
+
+            $timeout.IsEnabled = $true
+            $timeout.Opacity = 1
+            $timeout.ToolTip = $null
+
+            $noControl.IsEnabled = $true
+            $noControl.Opacity = 1
+            $noControl.ToolTip = $null
+            if ($null -ne $script:noControlBeforeScreenOff) {
+                $noControl.IsChecked = $script:noControlBeforeScreenOff
+                $script:noControlBeforeScreenOff = $null
+            }
+        }
+    } finally {
+        $script:powerOptionsUpdating = $false
+    }
+}
+
+# 직접 추가 인자는 고급 기능이지만, 화면을 끄는 동시에 제어를 끄는 조합은
+# scrcpy가 즉시 오류로 종료한다. 이 경우에는 실행·배치 파일 생성을 막고 이유를 알린다.
+function Get-ScrcpyOptionConflicts {
+    $extraArgs = @($TxtExtra.Text.Trim() -split '\s+' | Where-Object { $_ })
+    $shortFlags = @($extraArgs | Where-Object { $_ -match '^-[^-]+$' })
+    $screenOffRequested = [bool]$Controls['turn-screen-off'].IsChecked -or
+        [bool]($extraArgs | Where-Object { $_ -eq '--turn-screen-off' }) -or
+        [bool]($shortFlags | Where-Object { $_ -cmatch 'S' })
+    $noControlRequested = [bool]$Controls['no-control'].IsChecked -or
+        [bool]($extraArgs | Where-Object { $_ -eq '--no-control' }) -or
+        [bool]($shortFlags | Where-Object { $_ -cmatch 'n' })
+
+    if ($screenOffRequested -and $noControlRequested) {
+        return @('화면 끄고 PC로 사용과 보기 전용은 함께 쓸 수 없습니다. 보기 전용을 끄거나 직접 추가 인자에서 --no-control(-n)을 지우세요.')
+    }
+    return @()
 }
 
 function Refresh-Devices {
@@ -1184,24 +1273,38 @@ function Get-CurrentValues {
         }
     }
     $h['__extra'] = $TxtExtra.Text
+    if ($null -ne $script:stayAwakeBeforeScreenOff) { $h['__stay-awake-before-screen-off'] = [bool]$script:stayAwakeBeforeScreenOff }
+    if ($null -ne $script:noControlBeforeScreenOff) { $h['__no-control-before-screen-off'] = [bool]$script:noControlBeforeScreenOff }
     return $h
 }
 
 function Set-Values {
     param($Values)
     $script:ready = $false
-    foreach ($opt in $OPTIONS) {
-        if ($opt.Type -in @('phonepref','path')) { continue }
-        if (-not $Values.ContainsKey($opt.Key)) { continue }
-        $c = $Controls[$opt.Key]
-        switch ($opt.Type) {
-            'check'     { $c.IsChecked = [bool]$Values[$opt.Key] }
-            'combo'     { if ($c.Items.Contains($Values[$opt.Key])) { $c.SelectedItem = $Values[$opt.Key] } }
-            'editcombo' { $c.Text = [string]$Values[$opt.Key] }   # Text 만 세팅 (SelectedItem 은 WPF 가 알아서 맞춤)
-            default     { $c.Text = [string]$Values[$opt.Key] }
+    $script:powerOptionsUpdating = $true
+    try {
+        if ($Values.ContainsKey('__stay-awake-before-screen-off')) {
+            $script:stayAwakeBeforeScreenOff = [bool]$Values['__stay-awake-before-screen-off']
         }
+        if ($Values.ContainsKey('__no-control-before-screen-off')) {
+            $script:noControlBeforeScreenOff = [bool]$Values['__no-control-before-screen-off']
+        }
+        foreach ($opt in $OPTIONS) {
+            if ($opt.Type -in @('phonepref','path')) { continue }
+            if (-not $Values.ContainsKey($opt.Key)) { continue }
+            $c = $Controls[$opt.Key]
+            switch ($opt.Type) {
+                'check'     { $c.IsChecked = [bool]$Values[$opt.Key] }
+                'combo'     { if ($c.Items.Contains($Values[$opt.Key])) { $c.SelectedItem = $Values[$opt.Key] } }
+                'editcombo' { $c.Text = [string]$Values[$opt.Key] }   # Text 만 세팅 (SelectedItem 은 WPF 가 알아서 맞춤)
+                default     { $c.Text = [string]$Values[$opt.Key] }
+            }
+        }
+        if ($Values.ContainsKey('__extra')) { $TxtExtra.Text = [string]$Values['__extra'] }
+    } finally {
+        $script:powerOptionsUpdating = $false
     }
-    if ($Values.ContainsKey('__extra')) { $TxtExtra.Text = [string]$Values['__extra'] }
+    Update-PowerOptionState
     $script:ready = $true
     Update-Preview
 }
@@ -1218,6 +1321,14 @@ $NavList.Add_SelectionChanged({
 $BtnRefresh.Add_Click({ Refresh-Devices; Sync-PhonePrefs; Update-Preview })
 $CmbDevice.Add_SelectionChanged({ Update-Preview })
 $TxtExtra.Add_TextChanged({ Update-Preview })
+$Controls['turn-screen-off'].Add_Checked({ Update-PowerOptionState; Update-Preview })
+$Controls['turn-screen-off'].Add_Unchecked({ Update-PowerOptionState; Update-Preview })
+$Controls['no-control'].Add_Checked({
+    if ($script:powerOptionsUpdating) { return }
+    if ($Controls['turn-screen-off'].IsChecked) { $Controls['turn-screen-off'].IsChecked = $false }
+    Update-PowerOptionState
+    Update-Preview
+})
 
 $CmbPreset.Add_SelectionChanged({
     $name = [string]$CmbPreset.SelectedItem
@@ -1262,6 +1373,11 @@ $BtnBat.Add_Click({
     $dlg.FileName = 'scrcpy_my.bat'
     $dlg.InitialDirectory = $SCRCPY_DIR
     if (-not $dlg.ShowDialog()) { return }
+    $conflicts = @(Get-ScrcpyOptionConflicts)
+    if ($conflicts.Count) {
+        [void][Windows.MessageBox]::Show(($conflicts -join "`n"), '서로 같이 쓸 수 없는 옵션', 'OK', 'Warning')
+        return
+    }
     $argLine = (Format-Cmd (Get-ScrcpyArgs)) -replace '^scrcpy ', ''
     $content = @"
 @echo off
@@ -1283,6 +1399,11 @@ $BtnRun.Add_Click({
         [void][Windows.MessageBox]::Show(
             "scrcpy.exe 를 찾을 수 없습니다.`n`n설정 탭에서 [공식 최신 버전 설치]를 누르거나, 이미 설치했다면 [찾아보기]로 scrcpy.exe를 선택하세요.",
             'scrcpy 설정')
+        return
+    }
+    $conflicts = @(Get-ScrcpyOptionConflicts)
+    if ($conflicts.Count) {
+        [void][Windows.MessageBox]::Show(($conflicts -join "`n"), '서로 같이 쓸 수 없는 옵션', 'OK', 'Warning')
         return
     }
     try {
@@ -1322,6 +1443,7 @@ Refresh-Devices
 Sync-PhonePrefs
 Read-Presets
 Restore-LastValues
+Update-PowerOptionState
 Update-Preview
 
 [void]$win.ShowDialog()
