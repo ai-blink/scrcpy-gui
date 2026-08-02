@@ -3,7 +3,7 @@ param(
 )
 
 # =============================================================
-#  scrcpy 설정 GUI  v0.1.4-beta   (Windows / PowerShell 7 + WPF)
+#  scrcpy 설정 GUI  v0.1.5-beta   (Windows / PowerShell 7 + WPF)
 #  https://github.com/ai-blink/scrcpy-gui                MIT License
 #
 #  ★ 옵션을 추가/변경하려면 아래 $OPTIONS 표에 한 줄만 넣으면 됩니다.

@@ -5,7 +5,7 @@ scrcpy는 옵션이 100개가 넘는데 전부 명령줄로 넣어야 해서, �
 
 scrcpy 자체를 대체하지 않습니다. **옵션을 조립해서 실행해주는 얇은 창**입니다.
 
-> 현재 베타: **v0.1.4-beta**
+> 현재 베타: **v0.1.5-beta**
 
 ![scrcpy 설정 GUI — 화면 탭과 실행될 명령어 미리보기](assets/scrcpy-gui-screen-off-mode.png)
 
