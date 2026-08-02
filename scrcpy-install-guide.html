@@ -139,6 +139,11 @@
       .copy { flex: 0 0 auto; padding: 8px 10px; border: 1px solid rgba(199,255,112,.42); border-radius: 8px; color: var(--lime); background: transparent; font: 800 11px/1 var(--mono); cursor: pointer; }
       .copy:hover { color: #06131f; background: var(--lime); }
 
+      .gui-shot { overflow: hidden; margin: 22px 0 0; border: 1px solid rgba(97,230,255,.3); border-radius: 21px; background: rgba(7,18,31,.72); box-shadow: 0 18px 65px rgba(0,0,0,.18); }
+      .gui-shot img { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--line); }
+      .gui-shot figcaption { padding: 16px 19px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+      .gui-shot figcaption strong { color: var(--ink); }
+
       .verify-grid { display: grid; grid-template-columns: 1.08fr .92fr; gap: 20px; }
       .terminal, .security { border: 1px solid var(--line); border-radius: 20px; background: rgba(7,18,31,.72); }
       .terminal { overflow: hidden; }
@@ -274,6 +279,10 @@
           <div class="path-board__row"><div><h3>기본 설치 위치</h3><p>버전별 새 폴더에 설치합니다. 기존 설치를 덮어쓰지 않습니다.</p></div><span class="choice__badge">변경 가능</span></div>
           <div class="path-value"><span id="path">%LOCALAPPDATA%\scrcpy-gui\scrcpy\&lt;version&gt;</span><button class="copy" type="button" data-copy="%LOCALAPPDATA%\scrcpy-gui\scrcpy\&lt;version&gt;">경로 복사</button></div>
         </div>
+        <figure class="gui-shot">
+          <img src="assets/scrcpy-gui-screen-off-mode.png" alt="화면 탭을 연 scrcpy 설정 GUI. 왼쪽 범주 메뉴, 해상도와 프레임 설정, 하단 명령어 미리보기가 보인다." />
+          <figcaption><strong>실제 GUI 화면</strong> — 왼쪽에서 범주를 고르고, 하단에서 실행될 명령어를 확인합니다. 캡처의 미리보기에는 화면을 끈 채 PC로 쓰는 <code>--turn-screen-off --keep-active</code> 조합이 표시됩니다.</figcaption>
+        </figure>
       </section>
 
       <section class="section" id="verify" aria-labelledby="verify-title">
