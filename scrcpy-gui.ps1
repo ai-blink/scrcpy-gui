@@ -3,7 +3,7 @@ param(
 )
 
 # =============================================================
-#  scrcpy 설정 GUI  v0.1.5-beta   (Windows / PowerShell 7 + WPF)
+#  scrcpy 설정 GUI  v0.1.6-beta   (Windows / PowerShell 7 + WPF)
 #  https://github.com/ai-blink/scrcpy-gui                MIT License
 #
 #  ★ 옵션을 추가/변경하려면 아래 $OPTIONS 표에 한 줄만 넣으면 됩니다.
@@ -1189,6 +1189,22 @@ function Wait-Ui {
     }
 }
 
+# adb 는 붙기까지 몇 초 걸린다 — 끊긴 직후엔 목록이 비었다가 offline 을 거쳐 device 가 된다(실측).
+# 그래서 한 번 보고 판단하지 않고, 정해진 시간 동안 지켜본다. 붙으면 $true.
+function Wait-DeviceOnline {
+    param([int]$Seconds)
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    do {
+        $found = Get-AdbDevices
+        if (@($found | Where-Object { $_.State -eq 'device' }).Count -gt 0) { return $true }
+        if (@($found | Where-Object { $_.State -eq 'offline' }).Count -gt 0) {
+            Update-Ui '기기 찾는 중 — 폰이 응답하기 시작했습니다…'
+        }
+        Wait-Ui 700
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
 # 포트가 열려 있는지만 본다. adb connect 는 안 열린 포트에서 몇 초씩 매달리므로 먼저 걸러낸다.
 function Test-TcpPort {
     param([string]$IpAddress, [int]$Port, [int]$TimeoutMs = 1000)
@@ -1204,11 +1220,11 @@ function Test-TcpPort {
 }
 
 # 같은 Wi-Fi 에서 폰을 찾아 붙인다. 폰을 만지지 않고 되는 경로부터 순서대로 시도한다.
-#   ① adb devices        — adb 데몬이 mDNS 로 알아서 붙는다 (평소엔 여기서 끝난다)
-#   ② adb mdns services  — 데몬이 광고를 주울 때까지 잠깐 기다리며 IP:포트를 모은다
-#   ③ TCP probe          — 살아 있는 후보만 남긴다 (죽은 주소로 connect 하면 오래 매달린다)
-#   ④ adb connect        — 살아 있는 것에만 붙인다
-# ※ 이 폰은 기기 ID 가 mDNS 이름이라 그 이름으로는 connect 가 안 된다(실측). 그래서 ②가 필요하다.
+#   ① adb devices 폴링       — 데몬이 멀쩡하면 알아서 붙는다 (몇 초 걸린다)
+#   ② adb 데몬 재시작 + 폴링 — 오래 뜬 데몬은 mDNS 탐색이 죽어 있다. 이게 실제 복구 경로다
+#   ③ adb mdns services      — 광고에서 IP:포트를 직접 캐낸다 (②로도 안 될 때)
+#   ④ TCP probe → connect    — 살아 있는 후보만 남겨 붙인다 (죽은 주소로 connect 하면 오래 매달린다)
+# ※ 이 폰은 기기 ID 가 mDNS 이름이라 그 이름으로는 connect 가 안 된다(실측). 그래서 ③이 필요하다.
 function Find-WirelessDevices {
     if (-not $ADB_EXE) {
         [void][Windows.MessageBox]::Show('adb.exe 를 찾을 수 없습니다. [설정] 에서 지정하거나 [공식 최신 버전 설치]를 누르세요.', '기기 찾기', 'OK', 'Error')
@@ -1218,16 +1234,32 @@ function Find-WirelessDevices {
     $BtnDiscover.IsEnabled = $false
     $BtnRefresh.IsEnabled = $false
     try {
-        Update-Ui '기기 찾는 중 — 이미 연결돼 있는지 확인합니다…'
-        if (@(Get-AdbDevices | Where-Object { $_.State -eq 'device' }).Count -gt 0) {
+        # ① 데몬이 멀쩡하면 알아서 붙는다. 다만 즉시가 아니다 —
+        #    끊긴 직후엔 목록이 비었다가 offline 을 거쳐 device 가 된다(실측 2026-08-03).
+        Update-Ui '기기 찾는 중 — 폰이 스스로 붙기를 기다립니다…'
+        if (Wait-DeviceOnline 5) {
             Refresh-Devices
-            $LblStatus.Text = '이미 연결돼 있습니다 — 바로 [실행] 하세요'
+            $LblStatus.Text = '연결됐습니다 — [실행] 을 누르세요'
             return
         }
 
-        # 데몬이 mDNS 광고를 줍는 데 시간이 걸린다. 즉시 한 번 보고 없으면 잠깐씩 기다리며 다시 본다.
+        # ② adb 데몬을 다시 시작한다. **오래 떠 있던 데몬은 mDNS 탐색이 죽어 있다**(실측 2026-08-03):
+        #    재시작 전에는 `adb mdns services` 가 끊긴 상태에서도 8초 내내 빈 목록이었는데,
+        #    kill-server 직후에는 폰이 바로 잡히고 12초 뒤 연결까지 됐다. 이게 실제 복구 경로다.
+        #    ※ 이 단계는 열려 있는 미러링 창을 끊는다 — 그래서 누르기 전에 알린다.
+        Update-Ui 'adb 를 다시 시작합니다 — 열려 있는 미러링 창이 끊길 수 있습니다…'
+        try { & $ADB_EXE kill-server 2>$null | Out-Null } catch { }
+        Wait-Ui 800
+        if (Wait-DeviceOnline 18) {
+            Refresh-Devices
+            $LblStatus.Text = '연결됐습니다 — [실행] 을 누르세요'
+            return
+        }
+
+        # ③ 그래도 안 붙으면 mDNS 광고에서 IP:포트를 직접 캐낸다.
+        #    출력 형식(실측): `adb-R3CW…<TAB>_adb-tls-connect._tcp<TAB>192.168.1.131:45077` — 같은 줄이 여러 번 나온다.
         $candidates = [System.Collections.Generic.List[string]]::new()
-        $deadline = (Get-Date).AddSeconds(8)
+        $mdnsDeadline = (Get-Date).AddSeconds(3)   # 빈손으로 끝나는 게 보통이라 길게 붙잡지 않는다
         do {
             Update-Ui '기기 찾는 중 — 같은 Wi-Fi 에서 폰을 검색합니다…'
             try {
@@ -1242,7 +1274,7 @@ function Find-WirelessDevices {
             } catch { }
             if ($candidates.Count) { break }
             Wait-Ui 700
-        } while ((Get-Date) -lt $deadline)
+        } while ((Get-Date) -lt $mdnsDeadline)
 
         if (-not $candidates.Count) {
             Refresh-Devices
