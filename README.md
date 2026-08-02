@@ -5,7 +5,7 @@ scrcpy는 옵션이 100개가 넘는데 전부 명령줄로 넣어야 해서, �
 
 scrcpy 자체를 대체하지 않습니다. **옵션을 조립해서 실행해주는 얇은 창**입니다.
 
-> 현재 베타: **v0.1.2-beta**
+> 현재 베타: **v0.1.3-beta**
 
 ![scrcpy 설정 GUI — 화면 탭과 실행될 명령어 미리보기](assets/scrcpy-gui-screen-off-mode.png)
 
@@ -29,6 +29,10 @@ scrcpy 자체를 대체하지 않습니다. **옵션을 조립해서 실행해�
 ```
 scrcpy-gui.bat
 ```
+
+시작 BAT는 PowerShell 7의 표준 설치 경로를 먼저 확인하고 `PATH`를 마지막으로 확인합니다.
+따라서 PowerShell 7을 설치한 뒤 Windows 탐색기가 이전 `PATH`를 유지하고 있어도 실행됩니다.
+PowerShell 7 자체를 찾지 못하면 설치가 필요하다는 안내를 표시하므로, 안내의 링크에서 설치한 뒤 BAT를 다시 실행하세요.
 
 `scrcpy.exe`와 `adb.exe`는 **자동으로 찾습니다.** 찾아보는 곳:
 
