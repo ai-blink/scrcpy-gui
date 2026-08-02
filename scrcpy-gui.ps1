@@ -3,7 +3,7 @@ param(
 )
 
 # =============================================================
-#  scrcpy 설정 GUI  v0.1.3-beta   (Windows / PowerShell 7 + WPF)
+#  scrcpy 설정 GUI  v0.1.4-beta   (Windows / PowerShell 7 + WPF)
 #  https://github.com/ai-blink/scrcpy-gui                MIT License
 #
 #  ★ 옵션을 추가/변경하려면 아래 $OPTIONS 표에 한 줄만 넣으면 됩니다.
@@ -621,6 +621,7 @@ Add-Type -AssemblyName WindowsBase
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
           <Ellipse x:Name="DevDot" Width="9" Height="9" Fill="#4A4A52" Margin="0,0,9,0"/>
+          <Button x:Name="BtnPair" Content="무선 페어링" Style="{StaticResource Ghost}" Margin="0,0,9,0"/>
           <ComboBox x:Name="CmbDevice" Width="260" Style="{StaticResource DarkCombo}"/>
           <Button x:Name="BtnRefresh" Content="새로고침" Style="{StaticResource Ghost}" Margin="9,0,0,0"/>
         </StackPanel>
@@ -684,6 +685,7 @@ $NavList       = $win.FindName('NavList')
 $OptionHost    = $win.FindName('OptionHost')
 $CmbDevice     = $win.FindName('CmbDevice')
 $DevDot        = $win.FindName('DevDot')
+$BtnPair       = $win.FindName('BtnPair')
 $BtnRefresh    = $win.FindName('BtnRefresh')
 $CmbPreset     = $win.FindName('CmbPreset')
 $TxtPresetName = $win.FindName('TxtPresetName')
@@ -1095,9 +1097,15 @@ function Refresh-Devices {
     $sel = $CmbDevice.SelectedItem
     $CmbDevice.Items.Clear()
     [void]$CmbDevice.Items.Add('(자동)')
+    $states = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     try {
         foreach ($line in (& $ADB_EXE devices 2>$null)) {
-            if ($line -match '^(\S+)\s+device\s*$') { [void]$CmbDevice.Items.Add($Matches[1]) }
+            if ($line -match '^(\S+)\s+(\S+)\s*$') {
+                $serial = $Matches[1]
+                $state = $Matches[2]
+                if ($state -eq 'device') { [void]$CmbDevice.Items.Add($serial) }
+                else { [void]$states.Add($state) }
+            }
         }
     } catch { }
     if ($sel -and $CmbDevice.Items.Contains($sel)) { $CmbDevice.SelectedItem = $sel }
@@ -1109,7 +1117,120 @@ function Refresh-Devices {
         $LblStatus.Text = 'scrcpy.exe 를 찾지 못했습니다 — 왼쪽 [설정] 에서 위치를 지정하세요'
     }
     elseif ($n -gt 0) { $DevDot.Fill = $ColGreen; $LblStatus.Text = "기기 $n 대 연결됨" }
+    elseif ($states.Contains('unauthorized')) { $DevDot.Fill = $ColGray; $LblStatus.Text = '무선 디버깅 허용 대기 — 폰에서 허용한 뒤 [새로고침]을 누르세요' }
+    elseif ($states.Contains('offline')) { $DevDot.Fill = $ColGray; $LblStatus.Text = '기기가 offline — 폰의 무선 디버깅을 껐다 켠 뒤 [새로고침]을 누르세요' }
     else              { $DevDot.Fill = $ColGray;  $LblStatus.Text = '연결된 기기 없음 — 폰의 무선 디버깅을 확인하세요' }
+}
+
+# 페어링은 폰에서 사용자가 연 일회용 코드가 있어야만 가능하다. 코드는 메모리에서만 사용하고 저장하지 않는다.
+function Start-WirelessPairing {
+    $adbAvailable = if (-not $ADB_EXE) {
+        $false
+    } elseif ($ADB_EXE -eq 'adb') {
+        [bool](Get-Command adb -ErrorAction SilentlyContinue)
+    } else {
+        Test-Path -LiteralPath $ADB_EXE -PathType Leaf
+    }
+    if (-not $adbAvailable) {
+        [void][Windows.MessageBox]::Show(
+            "adb.exe 를 찾을 수 없습니다.`n`n[설정]에서 [공식 최신 버전 설치]를 먼저 누르거나 adb.exe 위치를 지정하세요.",
+            '무선 페어링', 'OK', 'Error')
+        return
+    }
+
+    [xml]$pairingXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="무선 페어링" Width="460" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Background="#202026" Foreground="#F0F0F3">
+  <Grid Margin="24">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <TextBlock Grid.Row="0" Text="폰에서 ‘페어링 코드로 기기 페어링’을 연 뒤, 팝업에 보이는 값을 입력하세요."
+               Foreground="#D7D7DE" TextWrapping="Wrap" Margin="0,0,0,18"/>
+    <TextBlock Grid.Row="1" Text="IP:포트" Foreground="#A8A8B2" Margin="0,0,0,6"/>
+    <TextBox x:Name="TxtPairEndpoint" Grid.Row="2" Height="32" Padding="9,5"
+             Background="#2A2A32" Foreground="#F0F0F3" BorderBrush="#454552"
+             ToolTip="예: 192.168.0.5:41234"/>
+    <TextBlock Grid.Row="3" Text="6자리 페어링 코드" Foreground="#A8A8B2" Margin="0,14,0,6"/>
+    <PasswordBox x:Name="TxtPairCode" Grid.Row="4" Height="32" Padding="9,5"
+                 Background="#2A2A32" Foreground="#F0F0F3" BorderBrush="#454552"/>
+    <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+      <Button x:Name="BtnPairCancel" Content="취소" MinWidth="76" Height="32" Margin="0,0,8,0"/>
+      <Button x:Name="BtnPairConfirm" Content="페어링" MinWidth="76" Height="32" IsDefault="True"/>
+    </StackPanel>
+  </Grid>
+</Window>
+'@
+
+    $reader = New-Object System.Xml.XmlNodeReader $pairingXaml
+    $dialog = [Windows.Markup.XamlReader]::Load($reader)
+    $dialog.Owner = $win
+    $endpointBox = $dialog.FindName('TxtPairEndpoint')
+    $codeBox = $dialog.FindName('TxtPairCode')
+    $cancelButton = $dialog.FindName('BtnPairCancel')
+    $confirmButton = $dialog.FindName('BtnPairConfirm')
+
+    $cancelButton.Add_Click({ $dialog.Close() })
+    $confirmButton.Add_Click({
+        $endpoint = $endpointBox.Text.Trim()
+        $code = $codeBox.Password.Trim()
+        if ($endpoint -notmatch '^(?<host>(?:\d{1,3}\.){3}\d{1,3}):(?<port>\d{1,5})$' -or
+            [int]$Matches.port -lt 1 -or [int]$Matches.port -gt 65535) {
+            [void][Windows.MessageBox]::Show('폰의 페어링 팝업에 보이는 IPv4 주소와 포트를 입력하세요. 예: 192.168.0.5:41234', '무선 페어링', 'OK', 'Warning')
+            return
+        }
+        $ipAddress = $null
+        if (-not [System.Net.IPAddress]::TryParse($Matches.host, [ref]$ipAddress) -or
+            $ipAddress.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
+            [void][Windows.MessageBox]::Show('올바른 IPv4 주소를 입력하세요.', '무선 페어링', 'OK', 'Warning')
+            return
+        }
+        if ($code -notmatch '^\d{6}$') {
+            [void][Windows.MessageBox]::Show('폰에 표시된 6자리 페어링 코드를 입력하세요.', '무선 페어링', 'OK', 'Warning')
+            return
+        }
+
+        $confirmButton.IsEnabled = $false
+        try {
+            # ProcessStartInfo.ArgumentList는 주소와 코드를 셸로 재해석하지 않고 adb에 그대로 전달한다.
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $ADB_EXE
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.ArgumentList.Add('pair')
+            $psi.ArgumentList.Add($endpoint)
+            $psi.ArgumentList.Add($code)
+            $process = [System.Diagnostics.Process]::Start($psi)
+            $stdout = $process.StandardOutput.ReadToEnd()
+            $stderr = $process.StandardError.ReadToEnd()
+            $process.WaitForExit()
+            if ($process.ExitCode -ne 0) {
+                $detail = ($stderr + $stdout).Trim()
+                if (-not $detail) { $detail = 'adb pair 명령이 실패했습니다.' }
+                [void][Windows.MessageBox]::Show("페어링에 실패했습니다.`n`n$detail", '무선 페어링', 'OK', 'Error')
+                return
+            }
+
+            $dialog.Close()
+            Refresh-Devices
+            $LblStatus.Text = '페어링 완료 — 기기 목록이 바로 비어 있으면 잠시 뒤 [새로고침]을 누르세요.'
+            [void][Windows.MessageBox]::Show('페어링했습니다. 목록에 기기가 보이면 [실행]을 누르세요.', '무선 페어링', 'OK', 'Information')
+        } catch {
+            [void][Windows.MessageBox]::Show("페어링에 실패했습니다.`n`n$($_.Exception.Message)", '무선 페어링', 'OK', 'Error')
+        } finally {
+            $confirmButton.IsEnabled = $true
+        }
+    })
+    [void]$dialog.ShowDialog()
 }
 
 # 다운로드는 이 버튼을 누른 뒤 확인 대화상자에서 다시 승인해야만 시작한다.
@@ -1199,7 +1320,7 @@ function Install-OfficialScrcpy {
         $Controls['scrcpyPath'].Text = $installedScrcpy
         $Controls['adbPath'].Text = $installedAdb
         if ($configSaved) {
-            $LblStatus.Text = "공식 scrcpy $($release.Tag) 설치·검증 완료 — 다음 [실행]부터 이 버전을 사용합니다."
+            $LblStatus.Text = "공식 scrcpy $($release.Tag) 설치·검증 완료 — 폰에서 무선 디버깅을 켠 뒤 상단 [무선 페어링]을 누르세요."
         } else {
             $LblStatus.Text = "설치는 완료됐지만 경로 저장에 실패했습니다 — 설정 탭에서 경로를 다시 지정하세요."
         }
@@ -1319,6 +1440,7 @@ $NavList.Add_SelectionChanged({
 })
 
 $BtnRefresh.Add_Click({ Refresh-Devices; Sync-PhonePrefs; Update-Preview })
+$BtnPair.Add_Click({ Start-WirelessPairing })
 $CmbDevice.Add_SelectionChanged({ Update-Preview })
 $TxtExtra.Add_TextChanged({ Update-Preview })
 $Controls['turn-screen-off'].Add_Checked({ Update-PowerOptionState; Update-Preview })
@@ -1378,13 +1500,30 @@ $BtnBat.Add_Click({
         [void][Windows.MessageBox]::Show(($conflicts -join "`n"), '서로 같이 쓸 수 없는 옵션', 'OK', 'Warning')
         return
     }
+    $adbForBat = if ($ADB_EXE -and $ADB_EXE -ne 'adb' -and (Test-Path -LiteralPath $ADB_EXE)) {
+        $ADB_EXE
+    } else {
+        (Get-Command adb -ErrorAction SilentlyContinue).Source
+    }
+    if (-not $adbForBat -or -not (Test-Path -LiteralPath $adbForBat)) {
+        [void][Windows.MessageBox]::Show(
+            "adb.exe 를 찾을 수 없어 PATH에 의존하지 않는 BAT를 만들 수 없습니다.`n`n[설정]에서 [공식 최신 버전 설치]를 먼저 누르거나 adb.exe 위치를 지정하세요.",
+            '.bat 로 저장', 'OK', 'Error')
+        return
+    }
     $argLine = (Format-Cmd (Get-ScrcpyArgs)) -replace '^scrcpy ', ''
     $content = @"
 @echo off
 chcp 65001 >nul
 setlocal
+set "ADB_EXE=$adbForBat"
+if not exist "%ADB_EXE%" (
+  echo [실패] adb.exe 를 찾을 수 없습니다: %ADB_EXE%
+  pause
+  exit /b 1
+)
 taskkill /f /im scrcpy.exe >nul 2>&1
-adb devices >nul
+"%ADB_EXE%" devices >nul
 timeout /t 2 /nobreak >nul
 "$SCRCPY_EXE" $argLine
 if errorlevel 1 pause
