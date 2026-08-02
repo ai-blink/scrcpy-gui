@@ -163,6 +163,27 @@
       .wireless__panel { padding: 29px; border: 1px solid var(--line); border-radius: 21px; background: var(--surface); }
       .wireless__panel h3 { margin: 0; font-size: 25px; letter-spacing: -.035em; }
       .wireless__panel > p { margin: 10px 0 24px; color: var(--muted); line-height: 1.6; }
+      .terminal-hint { margin: 18px 0; padding: 14px 15px; border: 1px solid rgba(199,255,112,.4); border-radius: 12px; color: #d8ecf5; background: rgba(199,255,112,.08); font-size: 14px; line-height: 1.55; }
+      .terminal-hint strong { display: block; margin-bottom: 4px; color: var(--lime); font: 800 12px/1.4 var(--mono); letter-spacing: .07em; }
+      .connection-guide { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+      .connection-card { padding: 27px; border: 1px solid var(--line); border-radius: 19px; background: rgba(7,18,31,.63); }
+      .connection-card__tag { margin: 0 0 9px; color: var(--cyan); font: 800 10px/1 var(--mono); letter-spacing: .11em; }
+      .connection-card h3 { margin: 0; font-size: 22px; letter-spacing: -.035em; }
+      .connection-card > p { margin: 11px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+      .status-list { display: grid; gap: 9px; margin: 20px 0 0; padding: 0; list-style: none; }
+      .status-list li { display: grid; grid-template-columns: 94px 1fr; gap: 11px; padding: 12px 0; border-top: 1px solid var(--line); color: #c8dbe5; font-size: 13px; line-height: 1.5; }
+      .status-list code { align-self: start; color: var(--lime); font: 800 11px/1.55 var(--mono); }
+      .next-action { margin-top: 20px; padding: 16px; border: 1px solid rgba(97,230,255,.32); border-radius: 13px; color: #dff5ff; background: rgba(33,112,152,.16); font-size: 14px; line-height: 1.6; }
+      .next-action strong { color: var(--cyan); }
+      .screen-reference { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 20px; }
+      .phone-shot { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 22px; align-items: center; margin: 0; padding: 23px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(135deg, rgba(16,42,65,.72), rgba(7,18,31,.8)); }
+      .phone-shot__meta { order: -1; }
+      .phone-shot__step { margin: 0 0 10px; color: var(--lime); font: 800 11px/1 var(--mono); letter-spacing: .1em; }
+      .phone-shot h3 { margin: 0; font-size: 21px; letter-spacing: -.035em; }
+      .phone-shot p { margin: 11px 0 0; color: #bed0dc; font-size: 14px; line-height: 1.6; }
+      .phone-shot a { display: block; justify-self: end; overflow: hidden; border: 1px solid rgba(97,230,255,.35); border-radius: 18px; box-shadow: 0 18px 40px rgba(0,0,0,.34); }
+      .phone-shot a:hover { border-color: var(--lime); }
+      .phone-shot img { display: block; width: 220px; height: 488px; object-fit: contain; background: #000; }
       .mini-steps { display: grid; gap: 10px; counter-reset: item; padding: 0; list-style: none; }
       .mini-steps li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); color: #cde0e9; font-size: 14px; line-height: 1.5; }
       .mini-steps li::before { color: var(--cyan); font: 800 12px/1.55 var(--mono); content: counter(item, decimal-leading-zero); counter-increment: item; }
@@ -195,9 +216,11 @@
         .nav__links { display: none; }
         .hero { padding: 62px 20px 62px; }
         main { padding: 0 20px 82px; }
-        .choice-grid, .install-flow, .verify-grid, .wireless, .rescue { grid-template-columns: 1fr; }
+        .choice-grid, .install-flow, .verify-grid, .wireless, .connection-guide, .screen-reference, .rescue { grid-template-columns: 1fr; }
         .phone-stage { min-height: 370px; }
         .phone { transform: scale(.78) rotate(-8deg); }
+        .phone-shot { grid-template-columns: minmax(0, 1fr) 156px; gap: 15px; padding: 17px; }
+        .phone-shot img { width: 156px; height: 346px; }
         .section { padding-top: 70px; }
         .signal-bar { margin-top: 47px; }
         .signal-bar i { display: none; }
@@ -318,18 +341,50 @@ scrcpy 4.1</pre>
           <article class="wireless__panel">
             <h3>폰에서 할 일</h3>
             <p>폰 설정을 바꾸는 단계입니다. 개발자 옵션과 무선 디버깅을 직접 켜는 데 동의한 경우에만 진행하세요.</p>
-            <ol class="mini-steps"><li><span><strong>설정 → 개발자 옵션</strong>에서 <strong>무선 디버깅</strong>을 켭니다.</span></li><li><span><strong>무선 디버깅</strong> 항목을 열고 <strong>페어링 코드로 기기 페어링</strong>을 누릅니다.</span></li><li><span>표시되는 <strong>IP:포트</strong>와 6자리 코드를 PC에 준비합니다.</span></li></ol>
+            <ol class="mini-steps"><li><span><strong>개발자 옵션이 없다면:</strong> 설정 → 휴대전화 정보 → 소프트웨어 정보 → <strong>빌드 번호</strong>를 7번 누르고, 잠금화면 PIN을 입력합니다. 기기별 메뉴 이름은 조금 다를 수 있습니다.</span></li><li><span><strong>설정 → 개발자 옵션</strong>에서 <strong>무선 디버깅</strong>을 켭니다. PC와 폰은 같은 Wi‑Fi/로컬 네트워크에 연결합니다.</span></li><li><span><strong>무선 디버깅</strong> 항목을 열고 <strong>페어링 코드로 기기 페어링</strong>을 누릅니다.</span></li><li><span>그 <strong>페어링 팝업</strong>에 표시된 IP:포트와 6자리 코드를 PC에 준비합니다. 일반 무선 디버깅 화면의 포트와 다를 수 있습니다.</span></li></ol>
           </article>
           <article class="wireless__panel">
             <h3>PC에서 할 일</h3>
-            <p>공식 scrcpy 배포판에는 일반적으로 adb가 함께 포함됩니다. 페어링을 마친 뒤에는 별도 <code>adb connect</code>가 필요 없습니다.</p>
-            <div class="terminal" style="border-radius:13px"><pre><span class="prompt">PS&gt;</span> adb pair 192.168.0.5:41234 123456
+            <div class="terminal-hint"><strong>이 명령은 Windows PowerShell에 입력합니다</strong>키보드의 Windows 키를 누르고 <strong>Terminal</strong> 또는 <strong>PowerShell</strong>을 연 뒤, 아래 명령을 한 줄씩 입력하세요.</div>
+            <p><strong>이미 한 번 페어링했다면 첫 줄은 건너뛰세요.</strong> <code>adb devices</code>에서 기기 끝에 <code>device</code>가 보이면 터미널을 닫고 설정 GUI의 <strong>실행</strong> 버튼을 누르면 됩니다.</p>
+            <div class="terminal" style="border-radius:13px"><pre># 처음 페어링할 때만: 폰에 보이는 실제 값을 넣습니다
+<span class="prompt">PS&gt;</span> adb pair &lt;폰에 표시된 IP:포트&gt; &lt;폰의 6자리 코드&gt;
 
+# 이미 페어링했거나, 위 명령이 끝난 뒤 실행합니다
 <span class="prompt">PS&gt;</span> adb devices
 List of devices attached
 &lt;자동 발견된 기기&gt;  device</pre></div>
+            <div class="next-action"><strong><code>adb</code>를 찾을 수 없나요?</strong><br />설정 GUI의 <strong>설정 → adb.exe 위치 → 찾아보기</strong>에서 설치 폴더 안의 <code>adb.exe</code>를 선택하세요. 그 뒤 이 안내를 다시 열거나 새 PowerShell 창을 열어 확인합니다.</div>
             <div class="warning"><strong>주의:</strong> <code>adb tcpip 5555</code> 고정 포트 방식은 안내하지 않습니다. 무선 디버깅 포트는 재접속마다 바뀔 수 있고, USB가 필요해질 수 있습니다.</div>
           </article>
+        </div>
+        <div class="connection-guide">
+          <article class="connection-card">
+            <p class="connection-card__tag">CHECK THE RESULT</p>
+            <h3>표시된 상태로 다음 행동을 고르세요.</h3>
+            <ul class="status-list">
+              <li><code>device</code><span><strong>정상 연결</strong>입니다. 터미널을 닫고 GUI 하단의 <strong>실행</strong>을 누르세요. 터미널에서 <code>scrcpy</code>를 다시 입력할 필요는 없습니다.</span></li>
+              <li><code>unauthorized</code><span>폰 화면의 USB/무선 디버깅 허용 확인창을 승인한 뒤 <code>adb devices</code>를 다시 실행합니다.</span></li>
+              <li><code>offline</code><span>폰의 무선 디버깅을 껐다 켜고, PowerShell에서 <code>adb devices</code>를 다시 실행합니다.</span></li>
+              <li><code>목록 비어 있음</code><span>같은 Wi‑Fi인지 확인하고 10초 기다린 뒤 다시 실행합니다. 계속 비어 있으면 폰에서 새 페어링 코드를 열어 처음 페어링 명령을 다시 합니다.</span></li>
+            </ul>
+          </article>
+          <article class="connection-card">
+            <p class="connection-card__tag">AFTER A REBOOT</p>
+            <h3>재부팅 뒤에는 연결이 아니라 토글을 복구합니다.</h3>
+            <p>삼성 등 일부 기기는 폰 재부팅 후 <strong>무선 디버깅</strong> 토글이 꺼집니다. 페어링 정보는 보통 남아 있으므로, 폰에서 토글만 다시 켜고 <code>adb devices</code>를 실행하면 됩니다.</p>
+            <div class="next-action"><strong>마지막 확인</strong><br />기기 상태가 <code>device</code>일 때만 GUI의 <strong>실행</strong>을 누릅니다. 폰을 새로 페어링하지 않아도 되는 경우가 대부분입니다.</div>
+          </article>
+        </div>
+        <div class="screen-reference" aria-label="폰 화면 예시">
+          <figure class="phone-shot">
+            <figcaption class="phone-shot__meta"><p class="phone-shot__step">SCREEN 01 / SETTINGS</p><h3>설정의 맨 아래에서<br />개발자 옵션을 누릅니다.</h3><p>폰 설정의 마지막 영역에 <strong>개발자 옵션</strong>이 보입니다. 항목이 없다면 위 단계처럼 빌드 번호를 7번 눌러 활성화한 뒤 이 화면으로 돌아옵니다.</p></figcaption>
+            <a href="guide-media/developer-options-location.png" target="_blank" rel="noreferrer" aria-label="개발자 옵션 위치 화면을 원본 크기로 열기"><img src="guide-media/developer-options-location.png" alt="삼성 설정 화면의 맨 아래에 개발자 옵션 항목이 강조된 모습" loading="lazy" /></a>
+          </figure>
+          <figure class="phone-shot">
+            <figcaption class="phone-shot__meta"><p class="phone-shot__step">SCREEN 02 / PAIRING</p><h3>무선 디버깅에서<br />페어링 코드로 기기 페어링.</h3><p><strong>페어링 코드로 기기 페어링</strong>을 누른 뒤 뜨는 팝업의 IP:포트와 6자리 코드만 PC에 입력합니다. 이 화면에 보이는 일반 IP:포트는 쓰지 않습니다.</p></figcaption>
+            <a href="guide-media/wireless-debugging-pairing-redacted.png" target="_blank" rel="noreferrer" aria-label="무선 디버깅 페어링 화면을 원본 크기로 열기"><img src="guide-media/wireless-debugging-pairing-redacted.png" alt="개인 IP와 계정명을 가린 삼성 무선 디버깅 화면. 페어링 코드로 기기 페어링 항목이 강조되어 있다" loading="lazy" /></a>
+          </figure>
         </div>
         <aside class="rescue">
           <div class="rescue__title">CONTROL SAFETY<strong>입력이 갇혔을 때</strong></div>
