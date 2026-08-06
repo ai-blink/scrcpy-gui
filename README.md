@@ -71,6 +71,9 @@ USB 케이블 없이 쓰려면 최초 1회 페어링이 필요합니다. **이 �
 3. GUI 상단의 **무선 페어링**을 누르고 팝업에 뜬 `IP:포트`와 6자리 코드를 입력
 4. 목록에 기기가 보이면 **실행**을 누릅니다. 페어링 코드는 앱에 저장하지 않습니다.
 
+![Wi-Fi 페어링 코드 팝업 — 6자리 코드는 가리고 사설 IP:포트는 그대로 표시](assets/wireless-pairing-code-popup-redacted.png)
+![scrcpy 설정 GUI 상단바 — 무선 페어링 버튼 위치](assets/scrcpy-gui-wireless-pairing-button.png)
+
 `공식 최신 버전 설치`로 설치했다면 `adb.exe` 경로도 앱이 함께 저장하므로, 별도 터미널·WinGet·USB 연결은 필요 없습니다.
 
 > ⚠️ `adb tcpip 5555` 방식은 쓰지 마세요. **전환 자체에 USB 연결이 필요하고**, Wi-Fi가 끊기거나
