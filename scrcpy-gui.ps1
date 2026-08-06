@@ -3,7 +3,7 @@ param(
 )
 
 # =============================================================
-#  scrcpy 설정 GUI  v0.1.6-beta   (Windows / PowerShell 7 + WPF)
+#  scrcpy 설정 GUI  v0.1.7-beta   (Windows / PowerShell 7 + WPF)
 #  https://github.com/ai-blink/scrcpy-gui                MIT License
 #
 #  ★ 옵션을 추가/변경하려면 아래 $OPTIONS 표에 한 줄만 넣으면 됩니다.
@@ -1399,22 +1399,41 @@ function Start-WirelessPairing {
         $confirmButton.IsEnabled = $false
         try {
             # ProcessStartInfo.ArgumentList는 주소와 코드를 셸로 재해석하지 않고 adb에 그대로 전달한다.
-            $psi = [System.Diagnostics.ProcessStartInfo]::new()
-            $psi.FileName = $ADB_EXE
-            $psi.UseShellExecute = $false
-            $psi.CreateNoWindow = $true
-            $psi.RedirectStandardOutput = $true
-            $psi.RedirectStandardError = $true
-            $psi.ArgumentList.Add('pair')
-            $psi.ArgumentList.Add($endpoint)
-            $psi.ArgumentList.Add($code)
-            $process = [System.Diagnostics.Process]::Start($psi)
-            $stdout = $process.StandardOutput.ReadToEnd()
-            $stderr = $process.StandardError.ReadToEnd()
-            $process.WaitForExit()
-            if ($process.ExitCode -ne 0) {
-                $detail = ($stderr + $stdout).Trim()
+            $runPair = {
+                $psi = [System.Diagnostics.ProcessStartInfo]::new()
+                $psi.FileName = $ADB_EXE
+                $psi.UseShellExecute = $false
+                $psi.CreateNoWindow = $true
+                $psi.RedirectStandardOutput = $true
+                $psi.RedirectStandardError = $true
+                $psi.ArgumentList.Add('pair')
+                $psi.ArgumentList.Add($endpoint)
+                $psi.ArgumentList.Add($code)
+                $process = [System.Diagnostics.Process]::Start($psi)
+                $stdout = $process.StandardOutput.ReadToEnd()
+                $stderr = $process.StandardError.ReadToEnd()
+                $process.WaitForExit()
+                [pscustomobject]@{ ExitCode = $process.ExitCode; Detail = ($stderr + $stdout).Trim() }
+            }
+
+            $result = & $runPair
+            # 오래 떠 있던 adb 데몬은 TLS 페어링 핸드셰이크가 깨져 있다(실측: Find-WirelessDevices의
+            # kill-server 복구 경로와 동일 원인). "protocol fault" 는 이 증상의 표식이라 한 번만 자동 재시도한다.
+            if ($result.ExitCode -ne 0 -and $result.Detail -match 'protocol fault') {
+                Update-Ui '페어링 재시도 — adb 를 다시 시작합니다…'
+                try { & $ADB_EXE kill-server 2>$null | Out-Null } catch { }
+                Wait-Ui 800
+                $result = & $runPair
+            }
+
+            if ($result.ExitCode -ne 0) {
+                $detail = $result.Detail
                 if (-not $detail) { $detail = 'adb pair 명령이 실패했습니다.' }
+                # 실측(2026-08-06): Windows 네트워크 프로필이 "공용"이면 방화벽이 로컬 LAN 페어링
+                # 연결을 막아 이 에러가 난다. adb 재시작으로도 안 풀리고 "개인"으로 바꾸면 즉시 해결됐다.
+                if ($detail -match 'protocol fault') {
+                    $detail += "`n`n이 오류는 Windows 네트워크 프로필이 '공용'일 때 방화벽이 폰과의 로컬 연결을 막아서 나는 경우가 흔합니다.`n[설정] > [네트워크 및 인터넷] > 지금 연결된 네트워크 > 네트워크 프로필 유형을 '개인'으로 바꾼 뒤 다시 시도해 보세요."
+                }
                 [void][Windows.MessageBox]::Show("페어링에 실패했습니다.`n`n$detail", '무선 페어링', 'OK', 'Error')
                 return
             }
