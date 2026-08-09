@@ -5,3 +5,8 @@ scrcpy-gui-last.json
 
 # 사용자가 GUI에서 내보낸 배치
 scrcpy_my.bat
+
+# 컴파일·배포 산출물
+app/
+**/bin/
+**/obj/

@@ -1,6 +1,6 @@
 # scrcpy 설정 GUI
 
-Windows에서 **안드로이드 폰을 PC 화면으로 조작**할 때 쓰는 [scrcpy](https://github.com/Genymobile/scrcpy)의 설정 창입니다.
+Windows에서 **안드로이드 폰을 PC 화면으로 조작**할 때 쓰는 [scrcpy](https://github.com/Genymobile/scrcpy)의 독립 WPF 설정 앱입니다.
 scrcpy는 옵션이 100개가 넘는데 전부 명령줄로 넣어야 해서, 그걸 화면에서 고르게 만든 것입니다.
 
 scrcpy 자체를 대체하지 않습니다. **옵션을 조립해서 실행해주는 얇은 창**입니다.
@@ -12,6 +12,14 @@ scrcpy 자체를 대체하지 않습니다. **옵션을 조립해서 실행해�
 왼쪽에서 범주를 고르고, 하단에서 **실행될 명령어**를 바로 확인합니다. 이 예시는
 `화면 끄고 PC로 사용`이 반영된 `--turn-screen-off --keep-active` 미리보기입니다.
 
+## 화면 구성
+
+- 좌측 사이드바에서 화면·창·전원·입력 등 옵션 범주를 고릅니다.
+- 설정 화면 상단은 **범주 이름 / 설명**의 2열 테두리 카드입니다.
+- 프리셋·직접 인자·명령어·실행 버튼은 좌측 사이드바까지 이어지는 창 전체 폭 하단 도크에 있습니다.
+- **직접 인자 추가**는 별도 모달에서 입력합니다. 값은 프리셋과 마지막 사용 설정에 함께 저장됩니다.
+- 명령어 미리보기는 한 줄이며, 긴 명령어는 세로로 잘리지 않고 가로로 스크롤해 확인할 수 있습니다.
+
 ---
 
 ## 필요한 것
@@ -19,46 +27,34 @@ scrcpy 자체를 대체하지 않습니다. **옵션을 조립해서 실행해�
 | | 최소 | 비고 |
 |---|---|---|
 | Windows | 10 / 11 | |
-| PowerShell | **7 이상** (`pwsh`) | [설치](https://github.com/PowerShell/PowerShell/releases) · Windows 기본 PowerShell 5.1로는 안 됩니다 |
+| .NET | 없음 (배포본) | `app\ScrcpyGui.exe`는 .NET 런타임을 포함합니다. 소스에서 배포본을 만들 때만 .NET 8 SDK가 필요합니다 |
 | scrcpy | 공식 최신 Windows 64비트 ZIP | Android 16 폰이면 **4.0 이상 필요** (그 미만은 크래시) |
 | adb | platform-tools | scrcpy 공식 배포판에 대부분 같이 들어 있습니다 |
 | 폰 | Android 5.0+ | 무선으로 쓰려면 **Android 11+** |
 
 ## 실행
 
+배포본에서는 `app\ScrcpyGui.exe`를 직접 실행하세요. 이 앱은 콘솔·PowerShell 프로세스에 매달리지 않으며,
+설정 창을 닫은 뒤에도 이미 실행한 scrcpy 미러링 창은 유지됩니다.
+
+소스 저장소에서 처음 만들 때는 다음을 한 번 실행합니다.
+
+```powershell
+.\publish-wpf.ps1
 ```
-scrcpy-gui.bat
-```
 
-시작 BAT는 PowerShell 7의 표준 설치 경로를 먼저 확인하고 `PATH`를 마지막으로 확인합니다.
-따라서 PowerShell 7을 설치한 뒤 Windows 탐색기가 이전 `PATH`를 유지하고 있어도 실행됩니다.
-PowerShell 7 자체를 찾지 못하면 설치가 필요하다는 안내를 표시하므로, 안내의 링크에서 설치한 뒤 BAT를 다시 실행하세요.
+`scrcpy-gui.bat`와 `scrcpy_run.bat`는 기존 바로가기 호환용입니다. 배포본이 없을 때만 위 WPF 앱을 빌드한 뒤
+`app\ScrcpyGui.exe`를 엽니다. PowerShell 7은 더 이상 실행 요구사항이 아닙니다.
 
-`scrcpy.exe`와 `adb.exe`는 **자동으로 찾습니다.** 찾아보는 곳:
+`scrcpy.exe`와 `adb.exe`는 **자동으로 찾습니다.** 찾는 순서는 다음과 같습니다.
 
-1. `설정` 탭에서 직접 지정한 경로
-2. 이 스크립트와 같은 폴더 (scrcpy 폴더에 통째로 넣어 쓰는 경우)
-3. `PATH`
-4. 흔한 설치 위치 — winget · scoop · chocolatey · `Program Files` · `Downloads` · `C:\app`
+1. `설정` 탭에서 직접 지정해 저장한 경로
+2. 설정 파일이 있는 폴더의 실행 파일
+3. `C:\app` 아래의 `scrcpy*\scrcpy.exe`와 기본 adb 경로
 
-> **여러 버전이 깔려 있으면 버전이 가장 높은 것을 고릅니다.**
-> 순서만으로 고르지 않는 이유: 예전에 깐 구버전이 `PATH`에 남아 있는 경우가 흔하고,
-> 그걸 집으면 최신 안드로이드에서 그냥 죽습니다.
-
-못 찾으면 창은 그대로 뜨고 하단에 안내가 나옵니다. **왼쪽 `설정` 탭**에서 다음 중 하나를 고르세요.
-
-1. **공식 최신 버전 설치** — Genymobile의 공식 GitHub 최신 정식 릴리스에서 Windows 64비트 ZIP만 받습니다.
-   다운로드 전에 버전·파일 크기·출처·SHA-256·설치 경로를 보여주며, `예`를 눌러야 시작합니다.
-   먼저 설치 폴더를 직접 고를 수 있습니다. 비워두거나 바꾸지 않으면 `%LOCALAPPDATA%\scrcpy-gui\scrcpy\<버전>`의 새 폴더에 풀고, 기존 설치는 덮어쓰지 않습니다.
-2. **찾아보기** — 이미 설치한 `scrcpy.exe` 또는 `adb.exe`를 직접 지정합니다.
-
-설치 또는 직접 지정한 경로는 `scrcpy-gui-config.json`에 저장돼서 다음부터 기억합니다. 설치만으로는 scrcpy를 실행하지 않으며, 하단 **실행** 버튼을 눌러야 폰 연결을 시작합니다.
-
-설정 탭의 **설치 안내 열기** 버튼을 누르면 [설치 안내 페이지](scrcpy-install-guide.html)가 기본 브라우저로 열립니다.
-공식 출처·설치 경로·SHA-256 검증·무선 페어링·입력 캡처 탈출법을 한 화면에서 확인할 수 있으며,
-안내를 여는 것만으로는 설치·다운로드·폰 연결이 시작되지 않습니다.
-
-> 보안: scrcpy 공식 저장소는 `Genymobile/scrcpy`뿐입니다. 이 GUI도 그 GitHub Releases API와 정확히 일치하는 다운로드 URL만 사용하며, URL 입력·제3자 미러·자동 백그라운드 업데이트는 제공하지 않습니다.
+여러 scrcpy 후보가 있으면 **가장 높은 버전**을 고릅니다. 찾지 못하면 앱은 계속 열려 있고,
+왼쪽 `설정` 탭의 **찾아보기**에서 `scrcpy.exe`와 `adb.exe` 위치를 직접 지정할 수 있습니다.
+지정한 경로는 `scrcpy-gui-config.json`에 저장됩니다.
 
 ---
 
@@ -171,11 +167,8 @@ scrcpy 기본 모드는 키 코드만 보내서 폰의 입력기(IME)를 거치�
 
 ## 옵션 추가하기
 
-`scrcpy-gui.ps1` 맨 위의 `$OPTIONS` 표에 **한 줄만 넣으면** 화면에 항목이 생깁니다.
-
-```powershell
-@{ Group='화면'; Key='내옵션'; Label='보일 이름'; Type='text'; Default=''; Arg='--어쩌구={0}'; Hint='설명' },
-```
+`src/ScrcpyGui/MainWindow.xaml.cs`의 `Definitions()`에 옵션 정의를 한 줄 추가하면 화면에 항목이 생깁니다.
+기존 PowerShell 구현은 이전 설정 파일과의 호환·비교를 위해 남아 있지만, 기본 실행 경로는 WPF 앱입니다.
 
 | `Type` | 화면에 나오는 것 |
 |---|---|
