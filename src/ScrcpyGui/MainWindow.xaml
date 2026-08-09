@@ -183,7 +183,7 @@
           <StackPanel Margin="9,0,0,0"><TextBlock Text="scrcpy" FontSize="21" FontWeight="Bold" /><TextBlock Text="ANDROID CONTROL" Foreground="{StaticResource Faint}" FontSize="9" FontWeight="SemiBold" /></StackPanel>
         </StackPanel>
         <Border Grid.Row="1" Background="#111112" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="9" Padding="10,9" Margin="0,0,0,14">
-          <StackPanel><TextBlock Text="현재 연결" Foreground="{StaticResource Faint}" FontSize="10" FontWeight="SemiBold" /><TextBlock Text="기기를 선택하세요" Foreground="{StaticResource Muted}" Margin="0,3,0,0" /></StackPanel>
+          <StackPanel><TextBlock Text="현재 선택" Foreground="{StaticResource Faint}" FontSize="10" FontWeight="SemiBold" /><TextBlock x:Name="SelectedDeviceText" Text="기기를 선택하세요" Foreground="{StaticResource Muted}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" /></StackPanel>
         </Border>
         <ListBox x:Name="NavigationList" Grid.Row="2" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource RailItem}"
                  SelectionChanged="NavigationList_OnSelectionChanged">
@@ -206,6 +206,7 @@
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
             <TextBlock Text="기기" Foreground="{StaticResource Faint}" VerticalAlignment="Center" Margin="0,0,8,0" />
             <ComboBox x:Name="DeviceBox" Width="210" SelectionChanged="DeviceBox_OnSelectionChanged" />
+            <Button Content="휴대폰 관리" Click="ManageDevicesButton_OnClick" Margin="8,0,0,0" />
             <Button x:Name="RefreshButton" Content="새로고침" Click="RefreshButton_OnClick" Margin="8,0,0,0" />
             <Button x:Name="DiscoverButton" Content="기기 찾기" Click="DiscoverButton_OnClick" />
             <Button Content="페어링" Click="PairButton_OnClick" />
@@ -233,8 +234,8 @@
           </StackPanel>
         </Grid>
         <TextBox x:Name="ExtraArgumentsBox" Visibility="Collapsed" TextChanged="AnyOptionChanged" ToolTip="직접 추가 인자" />
-        <TextBox x:Name="CommandPreviewBox" Grid.Row="1" Margin="0,12,0,12" Height="40" Padding="10,4" VerticalContentAlignment="Center" IsReadOnly="True" TextWrapping="NoWrap"
-                 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+        <TextBox x:Name="CommandPreviewBox" Grid.Row="1" Margin="0,12,0,12" Height="68" Padding="10,7" VerticalContentAlignment="Top" IsReadOnly="True" TextWrapping="Wrap"
+                 HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
                  Background="#111112" Foreground="#A9D3B8" BorderBrush="{StaticResource Line}" FontFamily="Consolas" FontSize="11.5" TextChanged="AnyOptionChanged" />
         <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
           <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="{StaticResource Faint}" Text="준비 중…" />

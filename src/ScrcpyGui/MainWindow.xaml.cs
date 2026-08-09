@@ -9,6 +9,8 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Media;
 using Microsoft.Win32;
 
 namespace ScrcpyGui;
@@ -18,11 +20,14 @@ public partial class MainWindow : Window
     private const string DefaultChoice = "(기본)";
     private readonly Dictionary<string, OptionDefinition> _definitions;
     private readonly Dictionary<string, FrameworkElement> _controls = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _deviceIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _onlineDeviceIds = new(StringComparer.Ordinal);
     private readonly string _dataDirectory;
     private JsonObject _config;
     private JsonObject _presets;
     private bool _updating;
+    private bool _refreshing;
+    private bool _automaticSelection = true;
+    private string? _selectedDeviceId;
     private string? _scrcpyPath;
     private string? _adbPath;
 
@@ -360,12 +365,14 @@ public partial class MainWindow : Window
 
     private async Task RefreshDevicesAsync()
     {
+        if (_refreshing) return;
         if (!EnsureAdb(showMessage: false))
         {
             SetStatus("adb.exe를 찾지 못했습니다 — 설정 탭에서 위치를 지정하세요.");
             return;
         }
 
+        _refreshing = true;
         RefreshButton.IsEnabled = false;
         try
         {
@@ -373,7 +380,7 @@ public partial class MainWindow : Window
             var devices = await GetAdbDevicesAsync();
             PopulateDevices(devices);
         }
-        finally { RefreshButton.IsEnabled = true; }
+        finally { RefreshButton.IsEnabled = true; _refreshing = false; }
     }
 
     private async void DiscoverButton_OnClick(object sender, RoutedEventArgs e)
@@ -469,40 +476,33 @@ public partial class MainWindow : Window
 
     private void PopulateDevices(IReadOnlyCollection<DeviceInfo> devices)
     {
-        var selected = DeviceBox.SelectedItem as string;
+        var selectedId = _automaticSelection ? null : _selectedDeviceId;
         var online = devices.Where(device => device.State == "device").ToArray();
         var known = _config["devices"] as JsonObject ?? new JsonObject();
         foreach (var device in online)
         {
-            known[device.Id] = new JsonObject { ["model"] = device.Model, ["lastSeen"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm") };
+            var record = known[device.Id] as JsonObject ?? new JsonObject();
+            record["model"] = device.Model;
+            record["lastSeen"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+            known[device.Id] = record;
         }
-        if (online.Length > 0)
-        {
-            _config["devices"] = known;
-            SaveObject(ConfigPath, _config);
-        }
+        _config["devices"] = known;
+        SaveObject(ConfigPath, _config);
 
         _updating = true;
         try
         {
-            _deviceIds.Clear();
+            _onlineDeviceIds.Clear();
+            foreach (var device in online) _onlineDeviceIds.Add(device.Id);
             DeviceBox.Items.Clear();
-            DeviceBox.Items.Add("(자동)");
-            foreach (var device in online)
-            {
-                var label = string.IsNullOrWhiteSpace(device.Model) ? device.Id : $"{device.Model}  ·  {device.Id}";
-                _deviceIds[label] = device.Id;
-                DeviceBox.Items.Add(label);
-            }
             foreach (var property in known.OrderBy(item => item.Key, StringComparer.Ordinal))
             {
-                if (online.Any(device => device.Id == property.Key)) continue;
-                var model = property.Value?["model"]?.GetValue<string>() ?? "";
-                var label = string.IsNullOrWhiteSpace(model) ? $"(오프라인) {property.Key}" : $"(오프라인) {model}  ·  {property.Key}";
-                _deviceIds[label] = property.Key;
-                DeviceBox.Items.Add(label);
+                var offline = !_onlineDeviceIds.Contains(property.Key);
+                var label = DeviceDisplayName(property.Key, property.Value as JsonObject);
+                DeviceBox.Items.Add(new DeviceChoice(property.Key, offline ? "(오프라인) " + label : label, offline));
             }
-            DeviceBox.SelectedItem = selected is not null && DeviceBox.Items.Contains(selected) ? selected : "(자동)";
+            DeviceBox.Items.Add(new DeviceChoice(null, "(자동 선택)", false));
+            SelectDeviceById(selectedId, _automaticSelection);
         }
         finally { _updating = false; }
 
@@ -513,7 +513,151 @@ public partial class MainWindow : Window
         UpdatePreview();
     }
 
-    private bool HasOnlineDevice() => _deviceIds.Keys.Any(label => !label.StartsWith("(오프라인)", StringComparison.Ordinal) && label != "(자동)");
+    private bool HasOnlineDevice() => _onlineDeviceIds.Count > 0;
+
+    private string? SelectedDeviceId() => (DeviceBox.SelectedItem as DeviceChoice)?.Id;
+
+    private void SelectDeviceById(string? id, bool automatic = false)
+    {
+        var choice = !automatic && id is not null ? DeviceBox.Items.OfType<DeviceChoice>().FirstOrDefault(item => item.Id == id) : null;
+        DeviceBox.SelectedItem = choice ?? DeviceBox.Items.OfType<DeviceChoice>().First(item => item.Id is null);
+        _automaticSelection = (DeviceBox.SelectedItem as DeviceChoice)?.Id is null;
+        _selectedDeviceId = SelectedDeviceId();
+        UpdateSelectedDeviceText();
+    }
+
+    private string DeviceDisplayName(string id, JsonObject? record)
+    {
+        var alias = ReadString(record?["alias"]);
+        var model = ReadString(record?["model"]);
+        var name = string.IsNullOrWhiteSpace(alias) ? model : alias;
+        if (string.IsNullOrWhiteSpace(name)) name = id;
+        return string.IsNullOrWhiteSpace(model) || alias == model ? name : $"{name} · {model}";
+    }
+
+    private string? EffectiveDeviceId()
+    {
+        if (!_automaticSelection) return SelectedDeviceId();
+        var defaultId = ReadString(_config["defaultDeviceId"]);
+        return _onlineDeviceIds.Contains(defaultId) ? defaultId : null;
+    }
+
+    private Window CreateDarkDialog(string title, double width, double height)
+    {
+        var dialog = new Window
+        {
+            Owner = this, Title = title, Width = width, Height = height, Background = new SolidColorBrush(Color.FromRgb(22, 22, 24)),
+            Foreground = new SolidColorBrush(Color.FromRgb(252, 252, 252)), WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+        foreach (var key in new object[] { typeof(Button), typeof(TextBox) })
+        {
+            if (TryFindResource(key) is Style style) dialog.Resources[key] = style;
+        }
+        return dialog;
+    }
+
+    private static DataTemplate DeviceListTemplate()
+    {
+        var panel = new FrameworkElementFactory(typeof(StackPanel));
+        panel.SetValue(StackPanel.MarginProperty, new Thickness(10, 7, 10, 7));
+        var name = new FrameworkElementFactory(typeof(TextBlock));
+        name.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        name.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        name.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceListItem.Name)));
+        panel.AppendChild(name);
+        var detail = new FrameworkElementFactory(typeof(TextBlock));
+        detail.SetValue(TextBlock.MarginProperty, new Thickness(0, 3, 0, 0));
+        detail.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush(Color.FromRgb(179, 179, 183)));
+        detail.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        detail.SetBinding(TextBlock.TextProperty, new Binding(nameof(DeviceListItem.Detail)));
+        panel.AppendChild(detail);
+        return new DataTemplate { VisualTree = panel };
+    }
+
+    private void UpdateSelectedDeviceText()
+    {
+        var id = SelectedDeviceId();
+        if (_automaticSelection)
+        {
+            var defaultId = ReadString(_config["defaultDeviceId"]);
+            var devices = _config["devices"] as JsonObject;
+            SelectedDeviceText.Text = string.IsNullOrWhiteSpace(defaultId) ? "자동 선택" : $"자동 선택 · {DeviceDisplayName(defaultId, devices?[defaultId] as JsonObject)}";
+            return;
+        }
+
+        var selectedId = id!;
+        var known = _config["devices"] as JsonObject;
+        var state = _onlineDeviceIds.Contains(selectedId) ? "연결됨" : "오프라인";
+        SelectedDeviceText.Text = $"{DeviceDisplayName(selectedId, known?[selectedId] as JsonObject)} · {state}";
+    }
+
+    private void ManageDevicesButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = CreateDarkDialog("휴대폰 관리", 760, 460);
+        dialog.MinWidth = 620;
+        dialog.MinHeight = 360;
+        var root = new Grid { Margin = new Thickness(18) };
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var list = new ListBox
+        {
+            Background = new SolidColorBrush(Color.FromRgb(26, 26, 29)), Foreground = new SolidColorBrush(Color.FromRgb(252, 252, 252)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(43, 43, 46)), BorderThickness = new Thickness(1), ItemTemplate = DeviceListTemplate(),
+        };
+        ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
+        ScrollViewer.SetVerticalScrollBarVisibility(list, ScrollBarVisibility.Auto);
+        root.Children.Add(list);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
+        Grid.SetRow(actions, 1);
+        root.Children.Add(actions);
+        dialog.Content = root;
+
+        void Reload(string? selectId = null)
+        {
+            list.Items.Clear();
+            var known = _config["devices"] as JsonObject ?? new JsonObject();
+            foreach (var item in known.OrderBy(entry => DeviceDisplayName(entry.Key, entry.Value as JsonObject), StringComparer.CurrentCulture))
+            {
+                var record = item.Value as JsonObject;
+                var status = _onlineDeviceIds.Contains(item.Key) ? "연결됨" : "오프라인";
+                var lastUsed = ReadString(record?["lastUsed"]);
+                var model = ReadString(record?["model"]);
+                var detail = $"{status} · 모델: {(string.IsNullOrWhiteSpace(model) ? "미지정" : model)} · 최근 사용: {(string.IsNullOrWhiteSpace(lastUsed) ? "없음" : lastUsed)}";
+                list.Items.Add(new DeviceListItem(item.Key, DeviceDisplayName(item.Key, record), detail));
+            }
+            if (selectId is not null) list.SelectedItem = list.Items.OfType<DeviceListItem>().FirstOrDefault(item => item.Id == selectId);
+        }
+
+        void SaveDevices() => SaveObject(ConfigPath, _config);
+        Button Action(string text, Action action)
+        {
+            var button = new Button { Content = text, Margin = new Thickness(5, 0, 0, 0), Padding = new Thickness(10, 5, 10, 5) };
+            button.Click += (_, _) => action(); actions.Children.Add(button); return button;
+        }
+        Action("추가", () => { var id = EditDevice(dialog, null, null); if (id is not null) { SaveDevices(); Reload(id); _ = RefreshDevicesAsync(); } });
+        Action("수정", () => { if (list.SelectedItem is DeviceListItem item) { var id = EditDevice(dialog, item.Id, (_config["devices"] as JsonObject)?[item.Id] as JsonObject); if (id is not null) { SaveDevices(); Reload(id); _ = RefreshDevicesAsync(); } } });
+        Action("제거", () => { if (list.SelectedItem is not DeviceListItem item) return; if (MessageBox.Show(dialog, $"‘{item.Name}’을(를) 목록에서 제거할까요?", "휴대폰 제거", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return; var devices = _config["devices"] as JsonObject; devices?.Remove(item.Id); if (ReadString(_config["defaultDeviceId"]) == item.Id) _config.Remove("defaultDeviceId"); if (_selectedDeviceId == item.Id) { _selectedDeviceId = null; _automaticSelection = true; } SaveDevices(); Reload(); _ = RefreshDevicesAsync(); });
+        Action("기본으로", () => { if (list.SelectedItem is DeviceListItem item) { _config["defaultDeviceId"] = item.Id; SaveDevices(); SelectDeviceById(item.Id); Reload(item.Id); } });
+        Action("닫기", dialog.Close);
+        Reload(_selectedDeviceId);
+        dialog.ShowDialog();
+    }
+
+    private string? EditDevice(Window owner, string? currentId, JsonObject? current)
+    {
+        var dialog = CreateDarkDialog(currentId is null ? "휴대폰 추가" : "휴대폰 수정", 440, 260);
+        var panel = new StackPanel { Margin = new Thickness(18) };
+        TextBox Field(string label, string value) { panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 4) }); var box = new TextBox { Text = value, Margin = new Thickness(0, 0, 0, 10) }; panel.Children.Add(box); return box; }
+        var id = Field("ADB 기기 ID", currentId ?? "");
+        var alias = Field("표시 이름", ReadString(current?["alias"]));
+        var model = Field("휴대폰 모델명", ReadString(current?["model"]));
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var save = new Button { Content = "저장", IsDefault = true, Margin = new Thickness(5) };
+        var cancel = new Button { Content = "취소", IsCancel = true, Margin = new Thickness(5) };
+        string? result = null;
+        save.Click += (_, _) => { var value = id.Text.Trim(); if (string.IsNullOrWhiteSpace(value)) { MessageBox.Show(dialog, "ADB 기기 ID를 입력하세요.", "휴대폰", MessageBoxButton.OK, MessageBoxImage.Warning); return; } var devices = _config["devices"] as JsonObject ?? new JsonObject(); if (currentId != value && devices.ContainsKey(value) && MessageBox.Show(dialog, "같은 ADB 기기 ID가 이미 있습니다. 기존 정보를 덮어쓸까요?", "휴대폰", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return; var record = current?.DeepClone() as JsonObject ?? new JsonObject(); record["alias"] = alias.Text.Trim(); record["model"] = model.Text.Trim(); devices[value] = record; if (currentId is not null && currentId != value) devices.Remove(currentId); _config["devices"] = devices; if (ReadString(_config["defaultDeviceId"]) == currentId) _config["defaultDeviceId"] = value; if (_selectedDeviceId == currentId) _selectedDeviceId = value; result = value; dialog.DialogResult = true; };
+        buttons.Children.Add(save); buttons.Children.Add(cancel); panel.Children.Add(buttons); dialog.Content = panel; dialog.ShowDialog(); return result;
+    }
 
     private async void PairButton_OnClick(object sender, RoutedEventArgs e)
     {
@@ -619,7 +763,16 @@ public partial class MainWindow : Window
         if (!_updating) UpdatePreview();
     }
 
-    private void DeviceBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdatePreview();
+    private void DeviceBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_updating)
+        {
+            _automaticSelection = SelectedDeviceId() is null;
+            _selectedDeviceId = SelectedDeviceId();
+        }
+        UpdateSelectedDeviceText();
+        UpdatePreview();
+    }
 
     private void UpdatePreview()
     {
@@ -645,7 +798,8 @@ public partial class MainWindow : Window
             arguments.Add(definition.Argument.Replace("{0}", value, StringComparison.Ordinal));
         }
         if (screenOff) arguments.Add("--keep-active");
-        if (DeviceBox.SelectedItem is string label && _deviceIds.TryGetValue(label, out var deviceId)) arguments.Add("--serial=" + deviceId);
+        var deviceId = EffectiveDeviceId();
+        if (deviceId is not null) arguments.Add("--serial=" + deviceId);
         arguments.AddRange(SplitArguments(ExtraArgumentsBox.Text));
         return arguments;
     }
@@ -657,7 +811,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "scrcpy.exe를 찾지 못했습니다. 설정 탭에서 위치를 지정하세요.", "실행", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
-        if (DeviceBox.SelectedItem is string selected && selected.StartsWith("(오프라인)", StringComparison.Ordinal))
+        if (EffectiveDeviceId() is string selected && !_onlineDeviceIds.Contains(selected))
         {
             MessageBox.Show(this, "고른 기기가 현재 연결돼 있지 않습니다. 기기 찾기로 연결한 뒤 실행하세요.", "실행", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -688,6 +842,7 @@ public partial class MainWindow : Window
             };
             foreach (var argument in BuildArguments()) start.ArgumentList.Add(argument);
             Process.Start(start);
+            MarkDeviceUsed();
             SetStatus("scrcpy를 실행했습니다. 이 설정 창을 닫아도 미러링 창은 계속 유지됩니다.");
         }
         catch (Exception exception)
@@ -842,13 +997,29 @@ public partial class MainWindow : Window
             values[definition.Key] = definition.Kind == OptionKind.Check ? ReadChecked(definition.Key) : ReadText(definition.Key);
         }
         values["__extra"] = ExtraArgumentsBox.Text;
+        values["__deviceId"] = _selectedDeviceId ?? "";
+        values["__deviceMode"] = _automaticSelection ? "auto" : "device";
         return values;
     }
 
     private void RestoreLastValues()
     {
         var values = LoadObject(LastPath);
+        _selectedDeviceId = ReadString(values["__deviceId"]);
+        _automaticSelection = ReadString(values["__deviceMode"]) != "device";
         if (values.Count > 0) ApplyValues(values);
+    }
+
+    private void MarkDeviceUsed()
+    {
+        var id = EffectiveDeviceId();
+        if (id is null) return;
+        var devices = _config["devices"] as JsonObject ?? new JsonObject();
+        var record = devices[id] as JsonObject ?? new JsonObject();
+        record["lastUsed"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+        devices[id] = record;
+        _config["devices"] = devices;
+        SaveObject(ConfigPath, _config);
     }
 
     private void ApplyValues(JsonObject values)
@@ -961,8 +1132,8 @@ public partial class MainWindow : Window
 
     private static JsonObject DefaultPresets() => new()
     {
-        ["평소용"] = new JsonObject { ["max-size"] = "1850", ["max-fps"] = "120", ["video-bit-rate"] = "8M", ["keyboard"] = "uhid", ["screen-off-timeout"] = "500", ["__extra"] = "" },
-        ["고화질"] = new JsonObject { ["max-size"] = "1920", ["max-fps"] = "120", ["video-bit-rate"] = "16M", ["video-codec"] = "h265", ["keyboard"] = "uhid", ["screen-off-timeout"] = "500", ["__extra"] = "" },
+        ["평소용"] = new JsonObject { ["max-size"] = "1850", ["max-fps"] = "120", ["video-bit-rate"] = "8M", ["keyboard"] = "uhid", ["__extra"] = "" },
+        ["고화질"] = new JsonObject { ["max-size"] = "1920", ["max-fps"] = "120", ["video-bit-rate"] = "16M", ["video-codec"] = "h265", ["keyboard"] = "uhid", ["__extra"] = "" },
         ["가볍게"] = new JsonObject { ["max-size"] = "1080", ["max-fps"] = "60", ["video-bit-rate"] = "4M", ["video-codec"] = "h265", ["keyboard"] = "uhid", ["turn-screen-off"] = true, ["__extra"] = "" },
         ["가로화면"] = new JsonObject { ["max-size"] = "", ["max-fps"] = "120", ["video-bit-rate"] = "8M", ["keyboard"] = "uhid", ["new-display"] = "1920x1080", ["__extra"] = "" },
     };
@@ -984,7 +1155,7 @@ public partial class MainWindow : Window
         new("창", "window-height", "창 높이", OptionKind.Text, "--window-height={0}", Hint: "픽셀. 비우면 자동입니다."),
         new("전원", "turn-screen-off", "화면 끄고 PC로 사용", OptionKind.Check, "--turn-screen-off", Hint: "화면을 끄고 활성 상태를 유지합니다."),
         new("전원", "stay-awake", "충전 중 활성 유지", OptionKind.Check, "--stay-awake", Hint: "충전 중일 때만 작동합니다."),
-        new("전원", "screen-off-timeout", "화면 자동 꺼짐 시간", OptionKind.Text, "--screen-off-timeout={0}", "500", Hint: "초 단위입니다."),
+        new("전원", "screen-off-timeout", "화면 자동 꺼짐 시간", OptionKind.Text, "--screen-off-timeout={0}", Hint: "초 단위입니다."),
         new("전원", "no-power-on", "시작할 때 안 켜기", OptionKind.Check, "--no-power-on"),
         new("전원", "power-off-on-close", "닫을 때 폰 화면 끄기", OptionKind.Check, "--power-off-on-close"),
         new("전원", "disable-screensaver", "PC 화면보호기 끄기", OptionKind.Check, "--disable-screensaver"),
@@ -1012,5 +1183,10 @@ public partial class MainWindow : Window
     ];
 
     private sealed record DeviceInfo(string Id, string State, string Model);
+    private sealed record DeviceChoice(string? Id, string Label, bool IsOffline)
+    {
+        public override string ToString() => Label;
+    }
+    private sealed record DeviceListItem(string Id, string Name, string Detail);
     private sealed record CommandResult(int ExitCode, string Output);
 }
