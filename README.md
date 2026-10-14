@@ -200,6 +200,13 @@ scrcpy 기본 모드는 키 코드만 보내서 폰의 입력기(IME)를 거치�
 
 ## 라이선스·출처
 
-- 이 프로젝트: **MIT** ([LICENSE](LICENSE))
+**개인 사용 무료.** 개인이 비상업 목적으로 사용하는 것은 무료입니다.
+
+회사·단체·의뢰 업무에서의 사용, 상업적 이용, 재배포·판매, 수정본 제작·배포는 제작자의 허가가 필요합니다. [ikseon@blinklabs.co.kr](mailto:ikseon@blinklabs.co.kr)로 이메일 주시면 협의합니다. 소스 코드는 참고용으로만 볼 수 있습니다.
+
+Copyright © 2026 장익선(BlinkLabs). All rights reserved. 자세한 내용은 [LICENSE](LICENSE)(영문 원문이 우선)를 참고하세요. 2026-10-15 이전에 MIT License로 배포된 버전은 받은 당시의 조건 그대로 유지됩니다.
+
+### 출처
+
 - scrcpy © Genymobile — [Apache-2.0](https://github.com/Genymobile/scrcpy/blob/master/LICENSE).
   이 저장소는 scrcpy를 **포함하지 않고 실행만** 합니다. scrcpy는 따로 받아야 합니다.
