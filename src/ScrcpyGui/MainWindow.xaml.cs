@@ -765,11 +765,13 @@ public partial class MainWindow : Window
 
     private void DeviceBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_updating)
-        {
-            _automaticSelection = SelectedDeviceId() is null;
-            _selectedDeviceId = SelectedDeviceId();
-        }
+        // PopulateDevices() clears the list before adding the replacement choices.
+        // Ignore that transient null selection; SelectDeviceById() updates the UI
+        // once a valid choice has been restored.
+        if (_updating) return;
+
+        _automaticSelection = SelectedDeviceId() is null;
+        _selectedDeviceId = SelectedDeviceId();
         UpdateSelectedDeviceText();
         UpdatePreview();
     }
