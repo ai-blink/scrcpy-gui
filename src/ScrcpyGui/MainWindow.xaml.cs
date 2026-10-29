@@ -30,12 +30,22 @@ public partial class MainWindow : Window
     private string? _selectedDeviceId;
     private string? _scrcpyPath;
     private string? _adbPath;
+    private readonly RemoteControls _remoteControls;
+    private readonly bool _backgroundServices;
+    private string _persistenceError = "";
+    private string _persistenceErrorPath = "";
+    private CancellationTokenSource? _connectionCancellation;
+    private readonly CancellationTokenSource _lifetime = new();
+    private Process? _sessionProcess;
+    private string? _selectedPresetName;
 
-    public MainWindow()
+    public MainWindow() : this(null, true) { }
+    internal MainWindow(string? dataDirectory, bool backgroundServices)
     {
+        _backgroundServices = backgroundServices;
         InitializeComponent();
         FitToWorkArea();
-        _dataDirectory = ResolveDataDirectory();
+        _dataDirectory = dataDirectory ?? ResolveDataDirectory();
         _definitions = Definitions().ToDictionary(item => item.Key, StringComparer.Ordinal);
         _config = LoadObject(ConfigPath);
         _presets = LoadObject(PresetPath);
@@ -46,16 +56,24 @@ public partial class MainWindow : Window
         }
 
         BuildOptionTabs();
+        _remoteControls = new RemoteControls(this, _dataDirectory, () =>
+        {
+            NavigationList.SelectedItem = NavigationList.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, "조작판"));
+        });
+        OptionTabs.Items.Add(new TabItem { Header = "조작판", Content = _remoteControls.Page });
         RestoreLastValues();
-        ReloadPresetList();
+        ReloadPresetList(_selectedPresetName);
         ResolveExecutables();
         NavigationList.SelectedIndex = 0;
         OptionTabs.SelectedIndex = 0;
         UpdatePreview();
         Loaded += async (_, _) =>
         {
+            if (!_backgroundServices) return;
+            await _remoteControls.Refresh();
+            if (_remoteControls.HasSelectedTarget)
+                NavigationList.SelectedItem = NavigationList.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, "조작판"));
             await RefreshDevicesAsync();
-            await SyncPhonePreferencesAsync();
         };
     }
 
@@ -84,8 +102,8 @@ public partial class MainWindow : Window
     private void FitToWorkArea()
     {
         var workArea = SystemParameters.WorkArea;
-        MinWidth = Math.Min(MinWidth, Math.Max(720, workArea.Width - 24));
-        MinHeight = Math.Min(MinHeight, Math.Max(560, workArea.Height - 24));
+        MinWidth = Math.Min(MinWidth, Math.Max(1, workArea.Width - 24));
+        MinHeight = Math.Min(MinHeight, Math.Max(1, workArea.Height - 24));
         Width = Math.Max(MinWidth, Math.Min(Width, workArea.Width - 24));
         Height = Math.Max(MinHeight, Math.Min(Height, workArea.Height - 24));
     }
@@ -98,6 +116,7 @@ public partial class MainWindow : Window
             foreach (var definition in group)
             {
                 var row = new Grid { Margin = new Thickness(0, 0, 0, 14) };
+                row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
@@ -114,8 +133,10 @@ public partial class MainWindow : Window
                 row.Children.Add(label);
 
                 var control = CreateControl(definition);
-                control.HorizontalAlignment = HorizontalAlignment.Left;
-                control.Width = 280;
+                control.HorizontalAlignment = HorizontalAlignment.Stretch;
+                control.MinHeight = 44;
+                System.Windows.Automation.AutomationProperties.SetName(control, definition.Label);
+                System.Windows.Automation.AutomationProperties.SetLabeledBy(control, label);
                 Grid.SetColumn(control, 1);
                 row.Children.Add(control);
 
@@ -127,12 +148,33 @@ public partial class MainWindow : Window
                     Foreground = System.Windows.Media.Brushes.LightSteelBlue,
                     HorizontalAlignment = HorizontalAlignment.Left,
                     LineHeight = 18,
-                    Width = 280,
                     TextWrapping = TextWrapping.Wrap,
+                    Visibility = string.IsNullOrWhiteSpace(definition.Hint) ? Visibility.Collapsed : Visibility.Visible,
                 };
                 Grid.SetRow(hint, 1);
                 Grid.SetColumn(hint, 1);
                 row.Children.Add(hint);
+                if (control is CheckBox)
+                {
+                    label.Visibility = Visibility.Collapsed;
+                    Grid.SetColumn(control, 0); Grid.SetColumnSpan(control, 2);
+                    Grid.SetColumn(hint, 0); Grid.SetColumnSpan(hint, 2);
+                }
+                else
+                {
+                    bool? wasNarrow = null;
+                    void FitRow()
+                    {
+                        var narrow = row.ActualWidth > 0 && row.ActualWidth < 500;
+                        if (wasNarrow == narrow) return; wasNarrow = narrow;
+                        row.ColumnDefinitions[0].Width = narrow ? new GridLength(0) : new GridLength(140);
+                        Grid.SetColumn(label, 0); Grid.SetColumnSpan(label, narrow ? 2 : 1);
+                        Grid.SetRow(control, narrow ? 1 : 0); Grid.SetColumn(control, narrow ? 0 : 1); Grid.SetColumnSpan(control, narrow ? 2 : 1);
+                        Grid.SetRow(hint, narrow ? 2 : 1); Grid.SetColumn(hint, narrow ? 0 : 1); Grid.SetColumnSpan(hint, narrow ? 2 : 1);
+                        label.Margin = new Thickness(0, 0, narrow ? 0 : 12, narrow ? 6 : 0);
+                    }
+                    row.SizeChanged += (_, _) => FitRow(); FitRow();
+                }
                 form.Children.Add(row);
             }
 
@@ -166,7 +208,7 @@ public partial class MainWindow : Window
             });
             var description = new TextBlock
             {
-                Text = "미러링 세션에 적용할 옵션을 선택하세요.",
+                Text = group.Key == "설정" ? "실행 파일 위치를 지정합니다. 직접 고른 경로를 우선합니다." : "변경한 옵션은 다음 실행에 적용됩니다. ‘폰 화면 자판 표시’는 폰에 즉시 적용됩니다.",
                 Foreground = (System.Windows.Media.Brush)FindResource("Faint"),
                 Margin = new Thickness(16, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -184,16 +226,8 @@ public partial class MainWindow : Window
                 Content = page,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
-            void FitPageToViewport()
-            {
-                if (scroll.ViewportWidth > page.Margin.Left + page.Margin.Right)
-                {
-                    page.Width = scroll.ViewportWidth - page.Margin.Left - page.Margin.Right;
-                }
-            }
-            scroll.Loaded += (_, _) => FitPageToViewport();
-            scroll.SizeChanged += (_, _) => FitPageToViewport();
             OptionTabs.Items.Add(new TabItem { Header = group.Key, Content = scroll });
         }
     }
@@ -208,6 +242,8 @@ public partial class MainWindow : Window
     private void OptionTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_updating || e.Source != OptionTabs || OptionTabs.SelectedItem is not TabItem tab) return;
+        var remotePage = Equals(tab.Header, "조작판");
+        MirrorHeader.Visibility = MirrorFooter.Visibility = remotePage ? Visibility.Collapsed : Visibility.Visible;
         foreach (var item in NavigationList.Items.OfType<ListBoxItem>())
         {
             if (Equals(item.Tag, tab.Header))
@@ -229,7 +265,12 @@ public partial class MainWindow : Window
                 var box = new CheckBox
                 {
                     IsChecked = definition.DefaultChecked,
+                    Content = definition.Label + (definition.Kind == OptionKind.PhonePreference ? " · 폰에 즉시 적용" : ""),
+                    MinHeight = 44,
+                    Padding = new Thickness(4, 8, 4, 8),
+                    Foreground = Brushes.Gainsboro,
                     VerticalAlignment = VerticalAlignment.Center,
+                    VerticalContentAlignment = VerticalAlignment.Center,
                     ToolTip = definition.Hint,
                 };
                 box.Checked += definition.Kind == OptionKind.PhonePreference ? PhonePreferenceChanged : AnyOptionChanged;
@@ -242,7 +283,7 @@ public partial class MainWindow : Window
             {
                 var combo = new ComboBox
                 {
-                    Height = 34,
+                    Height = 44,
                     IsEditable = definition.Kind == OptionKind.EditableCombo,
                     ToolTip = definition.Hint,
                 };
@@ -260,7 +301,7 @@ public partial class MainWindow : Window
                 panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 var path = new TextBox
                 {
-                    Height = 34,
+                    Height = 44,
                     ToolTip = definition.Hint,
                     Text = ReadString(_config[definition.Key]),
                 };
@@ -268,6 +309,7 @@ public partial class MainWindow : Window
                 {
                     if (!_updating) SaveConfiguredPaths();
                 };
+                System.Windows.Automation.AutomationProperties.SetName(path, definition.Label);
                 var browse = new Button { Content = "찾아보기", Margin = new Thickness(8, 0, 0, 0) };
                 browse.Click += (_, _) => BrowseForExecutable(definition, path);
                 panel.Children.Add(path);
@@ -279,7 +321,7 @@ public partial class MainWindow : Window
             }
             default:
             {
-                var text = new TextBox { Height = 34, Text = definition.DefaultText, ToolTip = definition.Hint };
+                var text = new TextBox { Height = 44, Text = definition.DefaultText, ToolTip = definition.Hint };
                 text.TextChanged += AnyOptionChanged;
                 control = text;
                 break;
@@ -315,9 +357,8 @@ public partial class MainWindow : Window
 
     private void ResolveExecutables()
     {
-        _scrcpyPath = HighestVersionPath(
-            new string?[] { ReadText("scrcpyPath"), Path.Combine(_dataDirectory, "scrcpy.exe") }
-                .Concat(FindMatchingFiles(@"C:\app", "scrcpy*", "scrcpy.exe")));
+        _scrcpyPath = FirstExisting(ReadText("scrcpyPath")) ?? HighestVersionPath(
+            new string?[] { Path.Combine(_dataDirectory, "scrcpy.exe") }.Concat(FindMatchingFiles(@"C:\app", "scrcpy*", "scrcpy.exe")));
 
         _adbPath = FirstExisting(
             ReadText("adbPath"),
@@ -373,21 +414,23 @@ public partial class MainWindow : Window
         }
 
         _refreshing = true;
-        RefreshButton.IsEnabled = false;
+        var ownsWork = _connectionCancellation is null;
+        if (ownsWork) BeginConnectionWork();
         try
         {
             SetStatus("연결된 기기 확인 중…");
             var devices = await GetAdbDevicesAsync();
             PopulateDevices(devices);
+            if (_backgroundServices) await SyncPhonePreferencesAsync();
         }
-        finally { RefreshButton.IsEnabled = true; _refreshing = false; }
+        catch (Exception ex) { SetStatus("기기 확인 실패 · " + ex.Message); }
+        finally { if (ownsWork) EndConnectionWork(); _refreshing = false; }
     }
 
     private async void DiscoverButton_OnClick(object sender, RoutedEventArgs e)
     {
         if (!EnsureAdb()) return;
-        DiscoverButton.IsEnabled = false;
-        RefreshButton.IsEnabled = false;
+        if (!BeginConnectionWork()) return;
         try
         {
             SetStatus("기기 찾는 중 — 폰이 스스로 붙기를 기다립니다…");
@@ -398,32 +441,16 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var restart = MessageBox.Show(
-                "ADB를 다시 시작해 무선 탐색을 복구합니다.\n열려 있는 scrcpy 미러링 창이 끊길 수 있습니다.\n\n계속할까요?",
-                "기기 찾기", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (restart != MessageBoxResult.Yes)
-            {
-                SetStatus("기기 찾기를 중단했습니다.");
-                return;
-            }
-
-            SetStatus("ADB를 다시 시작합니다 — 열려 있는 미러링 창이 끊길 수 있습니다…");
-            await RunAdbAsync(["kill-server"]);
-            if (await WaitForDeviceAsync(18))
-            {
-                await RefreshDevicesAsync();
-                SetStatus("연결됐습니다 — 실행을 누르세요.");
-                return;
-            }
-
             SetStatus("같은 Wi-Fi에서 폰을 검색합니다…");
             var mdns = await RunAdbAsync(["mdns", "services"]);
+            if (mdns.ExitCode != 0) throw new InvalidOperationException(mdns.Output);
             var endpoints = Regex.Matches(mdns.Output, @"(?<ip>\d{1,3}(?:\.\d{1,3}){3}):(?<port>\d{1,5})")
                 .Select(match => match.Value)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
             foreach (var endpoint in endpoints)
             {
+                _connectionCancellation!.Token.ThrowIfCancellationRequested();
                 var parts = endpoint.Split(':');
                 if (parts.Length != 2 || !int.TryParse(parts[1], out var port) || !await TcpOpenAsync(parts[0], port)) continue;
                 SetStatus($"기기 찾는 중 — {endpoint}에 연결합니다…");
@@ -436,11 +463,9 @@ public partial class MainWindow : Window
                 SetStatus("폰을 찾지 못했습니다 — 폰에서 무선 디버깅을 켜고 같은 Wi-Fi인지 확인하세요.");
             }
         }
-        finally
-        {
-            DiscoverButton.IsEnabled = true;
-            RefreshButton.IsEnabled = true;
-        }
+        catch (OperationCanceledException) { SetStatus("기기 찾기를 취소했습니다."); }
+        catch (Exception ex) { SetStatus("기기 찾기 실패 · " + ex.Message); }
+        finally { EndConnectionWork(); }
     }
 
     private async Task<bool> WaitForDeviceAsync(int seconds)
@@ -454,7 +479,7 @@ public partial class MainWindow : Window
                 PopulateDevices(devices);
                 return true;
             }
-            await Task.Delay(700);
+            await Task.Delay(700, _connectionCancellation?.Token ?? _lifetime.Token);
         } while (DateTime.UtcNow < deadline);
 
         return false;
@@ -463,6 +488,7 @@ public partial class MainWindow : Window
     private async Task<List<DeviceInfo>> GetAdbDevicesAsync()
     {
         var result = await RunAdbAsync(["devices", "-l"]);
+        if (result.ExitCode != 0) throw new InvalidOperationException(result.Output);
         var devices = new List<DeviceInfo>();
         foreach (var line in result.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
@@ -539,7 +565,7 @@ public partial class MainWindow : Window
     {
         if (!_automaticSelection) return SelectedDeviceId();
         var defaultId = ReadString(_config["defaultDeviceId"]);
-        return _onlineDeviceIds.Contains(defaultId) ? defaultId : null;
+        return _onlineDeviceIds.Contains(defaultId) ? defaultId : _onlineDeviceIds.Count == 1 ? _onlineDeviceIds.First() : null;
     }
 
     private Window CreateDarkDialog(string title, double width, double height)
@@ -645,7 +671,7 @@ public partial class MainWindow : Window
 
     private string? EditDevice(Window owner, string? currentId, JsonObject? current)
     {
-        var dialog = CreateDarkDialog(currentId is null ? "휴대폰 추가" : "휴대폰 수정", 440, 260);
+        var dialog = CreateDarkDialog(currentId is null ? "휴대폰 추가" : "휴대폰 수정", 480, 380);
         var panel = new StackPanel { Margin = new Thickness(18) };
         TextBox Field(string label, string value) { panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 4) }); var box = new TextBox { Text = value, Margin = new Thickness(0, 0, 0, 10) }; panel.Children.Add(box); return box; }
         var id = Field("ADB 기기 ID", currentId ?? "");
@@ -683,7 +709,9 @@ public partial class MainWindow : Window
         panel.Children.Add(code);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 22, 0, 0) };
         var cancel = new Button { Content = "취소", IsCancel = true, Padding = new Thickness(14, 7, 14, 7) };
-        cancel.Click += (_, _) => dialog.Close();
+        using var pairCancellation = new CancellationTokenSource();
+        cancel.Click += (_, _) => { pairCancellation.Cancel(); dialog.Close(); };
+        dialog.Closed += (_, _) => pairCancellation.Cancel();
         pair.Click += async (_, _) =>
         {
             if (!Regex.IsMatch(endpoint.Text.Trim(), @"^(?:\d{1,3}\.){3}\d{1,3}:\d{1,5}$"))
@@ -697,7 +725,8 @@ public partial class MainWindow : Window
                 return;
             }
             pair.IsEnabled = false;
-            var result = await RunAdbAsync(["pair", endpoint.Text.Trim(), code.Password.Trim()]);
+            var result = await RunAdbAsync(["pair", endpoint.Text.Trim(), code.Password.Trim()], pairCancellation.Token, TimeSpan.FromSeconds(30));
+            if (!dialog.IsVisible) return;
             pair.IsEnabled = true;
             if (result.ExitCode == 0 && !Regex.IsMatch(result.Output, "cannot|failed|refused", RegexOptions.IgnoreCase))
             {
@@ -719,13 +748,22 @@ public partial class MainWindow : Window
 
     private async Task SyncPhonePreferencesAsync()
     {
-        if (!EnsureAdb(showMessage: false)) return;
+        var serial = EffectiveDeviceId();
+        var generation = ++_phonePreferenceGeneration;
+        var available = EnsureAdb(showMessage: false) && serial is not null && _onlineDeviceIds.Contains(serial);
         foreach (var definition in _definitions.Values.Where(item => item.Kind == OptionKind.PhonePreference))
         {
-            var result = await RunAdbAsync(["shell", "settings", "get", definition.SettingNamespace!, definition.SettingKey!]);
             if (_controls[definition.Key] is not CheckBox box) continue;
+            box.IsEnabled = available; box.IsThreeState = false;
+            var result = available ? await RunAdbAsync(["-s", serial!, "shell", "settings", "get", definition.SettingNamespace!, definition.SettingKey!]) : new CommandResult(-1, "휴대폰을 연결하고 기기를 선택하세요.");
+            if (generation != _phonePreferenceGeneration || serial != EffectiveDeviceId()) return;
             _updating = true;
-            try { box.IsChecked = result.Output.Trim() == "1"; }
+            try
+            {
+                var known = result.ExitCode == 0 && result.Output.Trim() is "0" or "1";
+                box.IsChecked = known ? result.Output.Trim() == "1" : null;
+                box.ToolTip = known ? "선택한 휴대폰에 즉시 적용됩니다." : "상태 미확인 · " + result.Output;
+            }
             finally { _updating = false; }
         }
     }
@@ -740,6 +778,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        var serial = EffectiveDeviceId();
+        if (serial is null || !_onlineDeviceIds.Contains(serial)) { SetStatus("폰 설정을 바꿀 휴대폰을 먼저 선택하세요."); await SyncPhonePreferencesAsync(); return; }
         var desired = box.IsChecked == true ? "1" : "0";
         var result = MessageBox.Show(
             $"‘{definition.Label}’ 설정을 폰에 즉시 {(desired == "1" ? "켭니다" : "끕니다")}.\n되돌리려면 이 토글을 반대로 바꾸면 됩니다.\n\n계속할까요?",
@@ -750,17 +790,22 @@ public partial class MainWindow : Window
             return;
         }
 
-        var command = await RunAdbAsync(["shell", "settings", "put", definition.SettingNamespace!, definition.SettingKey!, desired]);
+        var command = await RunAdbAsync(["-s", serial, "shell", "settings", "put", definition.SettingNamespace!, definition.SettingKey!, desired]);
         if (command.ExitCode != 0)
         {
             MessageBox.Show(this, "폰 설정을 바꾸지 못했습니다. 기기 연결 상태를 확인하세요.", "폰 설정 변경", MessageBoxButton.OK, MessageBoxImage.Error);
             await SyncPhonePreferencesAsync();
         }
+        else await SyncPhonePreferencesAsync();
     }
 
     private void AnyOptionChanged(object? sender, EventArgs e)
     {
-        if (!_updating) UpdatePreview();
+        if (!_updating)
+        {
+            if (IsLoaded && !ReferenceEquals(sender, CommandPreviewBox)) PresetHint.Text = "실행 옵션이 변경됐습니다 · 저장하면 프리셋에 반영됩니다. 현재 미러링에는 적용되지 않습니다.";
+            UpdatePreview();
+        }
     }
 
     private void DeviceBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -774,12 +819,14 @@ public partial class MainWindow : Window
         _selectedDeviceId = SelectedDeviceId();
         UpdateSelectedDeviceText();
         UpdatePreview();
+        if (_backgroundServices) _ = SyncPhonePreferencesAsync();
     }
 
     private void UpdatePreview()
     {
         if (!IsLoaded || _updating) return;
-        CommandPreviewBox.Text = "scrcpy " + string.Join(' ', BuildArguments().Select(Quote));
+        try { CommandPreviewBox.Text = "scrcpy " + string.Join(' ', BuildArguments().Select(Quote)); }
+        catch (FormatException ex) { CommandPreviewBox.Text = ex.Message; }
     }
 
     private List<string> BuildArguments()
@@ -818,20 +865,24 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "고른 기기가 현재 연결돼 있지 않습니다. 기기 찾기로 연결한 뒤 실행하세요.", "실행", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-        if (ReadChecked("turn-screen-off") && (ReadChecked("no-control") || SplitArguments(ExtraArgumentsBox.Text).Any(arg => arg is "--no-control" or "-n")))
+        List<string> arguments;
+        try { arguments = BuildArguments(); }
+        catch (FormatException ex) { SetStatus(ex.Message); return; }
+        if (EffectiveDeviceId() is null && _onlineDeviceIds.Count > 1)
+        { SetStatus("연결된 휴대폰이 여러 대입니다. 위에서 실행할 기기를 골라 주세요."); return; }
+        var parsed = RemoteNative.ParseOptions("scrcpy.exe " + string.Join(' ', arguments.Select(Quote)));
+        if (arguments.Contains("--turn-screen-off") && parsed.Error.Contains("보기 전용"))
         {
             MessageBox.Show(this, "화면 끄고 PC로 사용과 보기 전용은 함께 쓸 수 없습니다.", "실행", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-        var mouseMode = ReadText("mouse");
-        if (mouseMode is "uhid" or "aoa")
+        if (ScrcpyCommandLine.CapturesPointer(arguments))
         {
-            var allow = MessageBox.Show(
-                "마우스가 scrcpy 창에 캡처될 수 있습니다.\n빠져나오려면 Alt 또는 Windows 키를 누르세요. 다시 누르면 재캡처됩니다.\n\n이 설정으로 실행할까요?",
-                "입력 캡처 안내", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (allow != MessageBoxResult.Yes) return;
+            SetStatus("캡처 모드는 화면에서 사용할 탈출 수단이 없어 실행하지 않았습니다. 입력 → 마우스 방식을 sdk로 바꾸고 직접 인자의 -M / --mouse=uhid·aoa / --otg / --relative-mouse를 제거하세요.");
+            return;
         }
 
+        var started = false;
         RunButton.IsEnabled = false;
         try
         {
@@ -840,18 +891,21 @@ public partial class MainWindow : Window
                 FileName = _scrcpyPath,
                 WorkingDirectory = Path.GetDirectoryName(_scrcpyPath)!,
                 UseShellExecute = false,
-                CreateNoWindow = true,
+                CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true,
             };
-            foreach (var argument in BuildArguments()) start.ArgumentList.Add(argument);
-            Process.Start(start);
-            MarkDeviceUsed();
-            SetStatus("scrcpy를 실행했습니다. 이 설정 창을 닫아도 미러링 창은 계속 유지됩니다.");
+            foreach (var argument in arguments) start.ArgumentList.Add(argument);
+            var process = Process.Start(start) ?? throw new InvalidOperationException("프로세스를 시작하지 못했습니다.");
+            _sessionProcess = process;
+            started = true;
+            SessionStatusText.Text = "시작 중 · 미러링 창을 확인하고 있습니다…";
+            SessionStatusText.Foreground = Brushes.LightSteelBlue;
+            _ = MonitorSessionAsync(process, arguments.Contains("--no-video-playback"));
         }
         catch (Exception exception)
         {
             MessageBox.Show(this, $"scrcpy 실행에 실패했습니다.\n\n{exception.Message}", "실행", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-        finally { RunButton.IsEnabled = true; }
+        finally { if (!started || _sessionProcess is null || _sessionProcess.HasExited) RunButton.IsEnabled = true; }
         await Task.CompletedTask;
     }
 
@@ -929,6 +983,8 @@ public partial class MainWindow : Window
         };
         apply.Click += (_, _) =>
         {
+            try { _ = SplitArguments(editor.Text).ToArray(); }
+            catch (FormatException ex) { MessageBox.Show(dialog, ex.Message, "직접 인자", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             ExtraArgumentsBox.Text = editor.Text.Trim();
             SetStatus(string.IsNullOrWhiteSpace(ExtraArgumentsBox.Text) ? "직접 인자를 비웠습니다." : "직접 인자를 적용했습니다.");
             dialog.DialogResult = true;
@@ -945,10 +1001,18 @@ public partial class MainWindow : Window
 
     private void PresetBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_updating || PresetBox.SelectedItem is not string name || name == "(선택 안 함)") return;
+        if (_updating || PresetBox.SelectedItem is not string name) return;
+        if (name == "(선택 안 함)")
+        {
+            _selectedPresetName = null;
+            SaveObject(LastPath, CaptureValues());
+            return;
+        }
         if (_presets[name] is JsonObject values)
         {
             ApplyValues(values);
+            _selectedPresetName = name;
+            SaveObject(LastPath, CaptureValues());
             SetStatus($"프리셋 ‘{name}’을 불러왔습니다.");
         }
     }
@@ -961,10 +1025,14 @@ public partial class MainWindow : Window
             SetStatus("저장할 프리셋 이름을 입력하거나 고르세요.");
             return;
         }
-        _presets[name] = CaptureValues();
-        SaveObject(PresetPath, _presets);
+        var updated = (JsonObject)_presets.DeepClone();
+        updated[name] = CaptureValues(includeDevice: false);
+        if (!SaveObject(PresetPath, updated)) return;
+        _presets = updated;
         ReloadPresetList(name);
+        SaveObject(LastPath, CaptureValues());
         SetStatus($"프리셋 ‘{name}’을 저장했습니다.");
+        PresetHint.Text = "저장됨 · 프리셋은 실행 옵션만 포함합니다.";
     }
 
     private void DeletePresetButton_OnClick(object sender, RoutedEventArgs e)
@@ -972,9 +1040,11 @@ public partial class MainWindow : Window
         var name = PresetBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(name) || name == "(선택 안 함)" || !_presets.ContainsKey(name)) return;
         if (MessageBox.Show(this, $"프리셋 ‘{name}’을 삭제할까요?", "프리셋 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        _presets.Remove(name);
-        SaveObject(PresetPath, _presets);
+        var updated = (JsonObject)_presets.DeepClone(); updated.Remove(name);
+        if (!SaveObject(PresetPath, updated)) return;
+        _presets = updated;
         ReloadPresetList();
+        SaveObject(LastPath, CaptureValues());
         SetStatus($"프리셋 ‘{name}’을 삭제했습니다.");
     }
 
@@ -983,15 +1053,16 @@ public partial class MainWindow : Window
         _updating = true;
         try
         {
+            _selectedPresetName = selected is not null && _presets.ContainsKey(selected) ? selected : null;
             PresetBox.Items.Clear();
             PresetBox.Items.Add("(선택 안 함)");
             foreach (var name in _presets.Select(item => item.Key).OrderBy(name => name, StringComparer.Ordinal)) PresetBox.Items.Add(name);
-            PresetBox.Text = selected ?? "(선택 안 함)";
+            PresetBox.SelectedItem = _selectedPresetName ?? "(선택 안 함)";
         }
         finally { _updating = false; }
     }
 
-    private JsonObject CaptureValues()
+    private JsonObject CaptureValues(bool includeDevice = true)
     {
         var values = new JsonObject();
         foreach (var definition in _definitions.Values.Where(item => item.Kind is not OptionKind.Path and not OptionKind.PhonePreference))
@@ -999,8 +1070,12 @@ public partial class MainWindow : Window
             values[definition.Key] = definition.Kind == OptionKind.Check ? ReadChecked(definition.Key) : ReadText(definition.Key);
         }
         values["__extra"] = ExtraArgumentsBox.Text;
-        values["__deviceId"] = _selectedDeviceId ?? "";
-        values["__deviceMode"] = _automaticSelection ? "auto" : "device";
+        if (includeDevice)
+        {
+            values["__deviceId"] = _selectedDeviceId ?? "";
+            values["__deviceMode"] = _automaticSelection ? "auto" : "device";
+            values["__presetName"] = _selectedPresetName ?? "";
+        }
         return values;
     }
 
@@ -1009,7 +1084,10 @@ public partial class MainWindow : Window
         var values = LoadObject(LastPath);
         _selectedDeviceId = ReadString(values["__deviceId"]);
         _automaticSelection = ReadString(values["__deviceMode"]) != "device";
+        var presetName = ReadString(values["__presetName"]);
+        _selectedPresetName = _presets.ContainsKey(presetName) ? presetName : null;
         if (values.Count > 0) ApplyValues(values);
+        if (_selectedPresetName is not null) PresetHint.Text = $"마지막 사용 설정 복원 · 프리셋 ‘{_selectedPresetName}’ · 저장 전 조정값도 유지합니다.";
     }
 
     private void MarkDeviceUsed()
@@ -1031,15 +1109,17 @@ public partial class MainWindow : Window
         {
             foreach (var definition in _definitions.Values)
             {
-                if (!values.TryGetPropertyValue(definition.Key, out var value) || value is null || !_controls.TryGetValue(definition.Key, out var control)) continue;
-                if (control is CheckBox box) box.IsChecked = ReadBool(value);
-                else if (control is ComboBox combo) combo.Text = ReadString(value);
-                else if (control is TextBox text) text.Text = ReadString(value);
+                if (definition.Kind is OptionKind.Path or OptionKind.PhonePreference || !_controls.TryGetValue(definition.Key, out var control)) continue;
+                values.TryGetPropertyValue(definition.Key, out var value);
+                if (control is CheckBox box) box.IsChecked = value is null ? definition.DefaultChecked : ReadBool(value);
+                else if (control is ComboBox combo) combo.Text = value is null ? definition.DefaultText : ReadString(value);
+                else if (control is TextBox text) text.Text = value is null ? definition.DefaultText : ReadString(value);
             }
-            if (values["__extra"] is not null) ExtraArgumentsBox.Text = ReadString(values["__extra"]);
+            ExtraArgumentsBox.Text = ReadString(values["__extra"]);
         }
         finally { _updating = false; }
         UpdatePreview();
+        PresetHint.Text = "프리셋 적용됨 · 실행 옵션만 변경했습니다. 연결 기기는 유지합니다.";
     }
 
     private bool ReadChecked(string key) => _controls.TryGetValue(key, out var control) && control is CheckBox box && box.IsChecked == true;
@@ -1058,11 +1138,12 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private Task<CommandResult> RunAdbAsync(IEnumerable<string> arguments) => _adbPath is null
+    private long _phonePreferenceGeneration;
+    private Task<CommandResult> RunAdbAsync(IEnumerable<string> arguments, CancellationToken? cancellation = null, TimeSpan? timeout = null) => _adbPath is null
         ? Task.FromResult(new CommandResult(-1, "adb.exe를 찾지 못했습니다."))
-        : RunProcessAsync(_adbPath, arguments);
+        : RunProcessAsync(_adbPath, arguments, cancellation ?? _connectionCancellation?.Token ?? _lifetime.Token, timeout);
 
-    private static async Task<CommandResult> RunProcessAsync(string executable, IEnumerable<string> arguments)
+    private static async Task<CommandResult> RunProcessAsync(string executable, IEnumerable<string> arguments, CancellationToken cancellation = default, TimeSpan? timeout = null)
     {
         try
         {
@@ -1079,7 +1160,15 @@ public partial class MainWindow : Window
             if (process is null) return new CommandResult(-1, "프로세스를 시작하지 못했습니다.");
             var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            deadline.CancelAfter(timeout ?? TimeSpan.FromSeconds(12));
+            try { await Task.WhenAll(process.WaitForExitAsync(deadline.Token), stdout, stderr).WaitAsync(deadline.Token); }
+            catch (OperationCanceledException)
+            {
+                // Only this client command is stopped, never the shared ADB server.
+                try { if (!process.HasExited) process.Kill(); } catch { }
+                return new CommandResult(-2, cancellation.IsCancellationRequested ? "작업을 취소했습니다." : "응답 제한 시간을 초과했습니다. 연결을 확인한 뒤 다시 시도하세요.");
+            }
             return new CommandResult(process.ExitCode, (await stdout) + (await stderr));
         }
         catch (Exception exception) { return new CommandResult(-1, exception.Message); }
@@ -1096,16 +1185,21 @@ public partial class MainWindow : Window
         catch { return false; }
     }
 
-    private static IEnumerable<string> SplitArguments(string text) => Regex.Matches(text ?? "", "\\\"([^\\\"]*)\\\"|'([^']*)'|(\\S+)")
-        .Select(match => match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Success ? match.Groups[2].Value : match.Groups[3].Value);
+    private static IEnumerable<string> SplitArguments(string text) => ScrcpyCommandLine.Parse(text ?? "");
 
-    private static string Quote(string argument) => argument.Contains(' ') ? '"' + argument.Replace("\"", "\\\"") + '"' : argument;
-    private void SetStatus(string message) => StatusText.Text = message;
+    private static string Quote(string argument) => ScrcpyCommandLine.Quote(argument);
+    private void SetStatus(string message) => StatusText.Text = _persistenceError.Length == 0 ? message : _persistenceError + "\n" + message;
 
     protected override void OnClosing(CancelEventArgs e)
     {
         SaveObject(LastPath, CaptureValues());
+        if (_remoteControls.KeepRunningWhenSettingsClosed)
+        {
+            e.Cancel = true;
+            WindowState = WindowState.Minimized;
+        }
         base.OnClosing(e);
+        if (!e.Cancel) { _lifetime.Cancel(); _connectionCancellation?.Cancel(); _remoteControls.Dispose(); }
     }
 
     private static JsonObject LoadObject(string path)
@@ -1114,10 +1208,18 @@ public partial class MainWindow : Window
         catch { return new JsonObject(); }
     }
 
-    private static void SaveObject(string path, JsonObject value)
+    private bool SaveObject(string path, JsonObject value)
     {
-        try { File.WriteAllText(path, value.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false)); }
-        catch { }
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, value.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+            File.Move(temporary, path, true);
+            if (_persistenceErrorPath == path) { _persistenceError = ""; _persistenceErrorPath = ""; }
+            return true;
+        }
+        catch (Exception ex) { _persistenceErrorPath = path; _persistenceError = "저장 실패 · 변경 사항이 파일에 기록되지 않았습니다: " + ex.Message; SetStatus(""); return false; }
+        finally { try { if (File.Exists(temporary)) File.Delete(temporary); } catch { } }
     }
 
     private static string ReadString(JsonNode? value)
@@ -1162,7 +1264,7 @@ public partial class MainWindow : Window
         new("전원", "power-off-on-close", "닫을 때 폰 화면 끄기", OptionKind.Check, "--power-off-on-close"),
         new("전원", "disable-screensaver", "PC 화면보호기 끄기", OptionKind.Check, "--disable-screensaver"),
         new("입력", "keyboard", "키보드 방식", OptionKind.Combo, "--keyboard={0}", "uhid", Items: [DefaultChoice, "uhid", "aoa", "sdk", "disabled"], Hint: "uhid는 한글 입력을 지원합니다. 한/영은 Shift+Space."),
-        new("입력", "mouse", "마우스 방식", OptionKind.Combo, "--mouse={0}", DefaultChoice, Items: [DefaultChoice, "uhid", "aoa", "sdk", "disabled"], Hint: "uhid·aoa는 실행 전 탈출 방법을 안내합니다."),
+        new("입력", "mouse", "마우스 방식", OptionKind.Combo, "--mouse={0}", DefaultChoice, Items: [DefaultChoice, "sdk", "disabled", "uhid", "aoa"], Hint: "안구마우스는 sdk를 사용하세요. 화면에서 탈출할 수 없는 캡처 모드는 이 앱에서 실행을 제한합니다."),
         new("입력", "show-touches", "터치 지점 표시", OptionKind.Check, "--show-touches"),
         new("입력", "prefer-text", "텍스트 입력 우선", OptionKind.Check, "--prefer-text"),
         new("입력", "no-key-repeat", "키 반복 끄기", OptionKind.Check, "--no-key-repeat"),
@@ -1180,7 +1282,7 @@ public partial class MainWindow : Window
         new("기타", "start-app", "시작할 앱", OptionKind.Text, "--start-app={0}", Hint: "패키지명 또는 ?이름"),
         new("기타", "display-id", "화면 번호", OptionKind.Text, "--display-id={0}"),
         new("기타", "render-driver", "렌더러", OptionKind.Combo, "--render-driver={0}", DefaultChoice, Items: [DefaultChoice, "direct3d11", "direct3d", "opengl", "opengles2", "software"]),
-        new("설정", "scrcpyPath", "scrcpy.exe 위치", OptionKind.Path, Hint: "여러 버전이 있으면 가장 높은 버전을 고릅니다."),
+        new("설정", "scrcpyPath", "scrcpy.exe 위치", OptionKind.Path, Hint: "직접 지정한 파일을 우선합니다. 비어 있거나 파일이 없을 때 자동으로 찾습니다."),
         new("설정", "adbPath", "adb.exe 위치", OptionKind.Path, Hint: "scrcpy 폴더 안에 같이 있는 경우가 많습니다."),
     ];
 
