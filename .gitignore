@@ -14,3 +14,8 @@ app/
 
 # Local isolated VMs and private test artifacts
 work/
+
+# 로컬 도구 표식·로그·파이썬 캐시
+.background-llm.json
+logs/
+__pycache__/

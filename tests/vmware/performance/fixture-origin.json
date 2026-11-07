@@ -1,0 +1,5 @@
+{
+  "source": "C:\\ai\\projects\\scrcpy-gui\\tests\\vmware\\Guest-AppUi.ps1",
+  "sha256": "966f2b44a876431d66d57802d27baccc03056b7877a55959b80fca1d0e17ff61",
+  "timing": "startup to UIA window observation (300ms polling); full workflow includes fixed waits; CPU and memory are target process only, not descendants"
+}
