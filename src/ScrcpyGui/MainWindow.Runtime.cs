@@ -28,7 +28,8 @@ public partial class MainWindow
                         SessionStatusText.Text = backgroundOnly ? "백그라운드 세션 실행 중 · 변경한 옵션은 다음 실행에 적용" : "미러링 실행 중 · 변경한 옵션은 다음 실행에 적용";
                         SessionStatusText.Foreground = Brushes.LightGreen;
                         RunButton.Content = "새 창 실행"; RunButton.IsEnabled = true;
-                        MarkDeviceUsed(); await _remoteControls.Refresh();
+                        MarkDeviceUsed();
+                        if (!backgroundOnly) await _remoteControls.StartForSessionAsync(process.Id);
                     }
                     break;
                 }
@@ -55,7 +56,7 @@ public partial class MainWindow
         finally
         {
             process.ErrorDataReceived -= receive; process.OutputDataReceived -= receive;
-            if (ReferenceEquals(_sessionProcess, process)) { _sessionProcess = null; RunButton.IsEnabled = true; RunButton.Content = "실행"; }
+            if (ReferenceEquals(_sessionProcess, process)) { _sessionProcess = null; RunButton.IsEnabled = true; RunButton.Content = "새 창 실행"; }
             process.Dispose();
         }
     }

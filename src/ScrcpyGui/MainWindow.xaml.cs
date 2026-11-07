@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private JsonObject _config;
     private JsonObject _presets;
     private bool _updating;
+    private bool _initialized;
     private bool _refreshing;
     private bool _automaticSelection = true;
     private string? _selectedDeviceId;
@@ -67,8 +68,10 @@ public partial class MainWindow : Window
         NavigationList.SelectedIndex = 0;
         OptionTabs.SelectedIndex = 0;
         UpdatePreview();
+        _initialized = true;
         Loaded += async (_, _) =>
         {
+            UpdatePreview();
             if (!_backgroundServices) return;
             await _remoteControls.Refresh();
             if (_remoteControls.HasSelectedTarget)
@@ -243,7 +246,8 @@ public partial class MainWindow : Window
     {
         if (_updating || e.Source != OptionTabs || OptionTabs.SelectedItem is not TabItem tab) return;
         var remotePage = Equals(tab.Header, "조작판");
-        MirrorHeader.Visibility = MirrorFooter.Visibility = remotePage ? Visibility.Collapsed : Visibility.Visible;
+        MirrorHeader.Visibility = remotePage ? Visibility.Collapsed : Visibility.Visible;
+        MirrorFooter.Visibility = Visibility.Visible;
         foreach (var item in NavigationList.Items.OfType<ListBoxItem>())
         {
             if (Equals(item.Tag, tab.Header))
@@ -290,6 +294,7 @@ public partial class MainWindow : Window
                 foreach (var item in definition.Items ?? []) combo.Items.Add(item);
                 combo.Text = definition.DefaultText;
                 combo.SelectionChanged += AnyOptionChanged;
+                combo.AddHandler(TextBox.TextChangedEvent, new TextChangedEventHandler(AnyOptionChanged));
                 combo.LostFocus += AnyOptionChanged;
                 control = combo;
                 break;
@@ -801,11 +806,16 @@ public partial class MainWindow : Window
 
     private void AnyOptionChanged(object? sender, EventArgs e)
     {
-        if (!_updating)
-        {
-            if (IsLoaded && !ReferenceEquals(sender, CommandPreviewBox)) PresetHint.Text = "실행 옵션이 변경됐습니다 · 저장하면 프리셋에 반영됩니다. 현재 미러링에는 적용되지 않습니다.";
-            UpdatePreview();
-        }
+        if (_updating || !_initialized || ReferenceEquals(sender, CommandPreviewBox)) return;
+        SaveCurrentValues();
+        UpdatePreview();
+    }
+
+    private void SaveCurrentValues()
+    {
+        if (!_initialized || _updating) return;
+        if (SaveObject(LastPath, CaptureValues()))
+            PresetHint.Text = "자동 저장됨 · 다음 실행과 앱 재시작에 적용";
     }
 
     private void DeviceBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -818,6 +828,7 @@ public partial class MainWindow : Window
         _automaticSelection = SelectedDeviceId() is null;
         _selectedDeviceId = SelectedDeviceId();
         UpdateSelectedDeviceText();
+        SaveCurrentValues();
         UpdatePreview();
         if (_backgroundServices) _ = SyncPhonePreferencesAsync();
     }
@@ -882,6 +893,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        SaveCurrentValues();
         var started = false;
         RunButton.IsEnabled = false;
         try
@@ -1236,7 +1248,7 @@ public partial class MainWindow : Window
 
     private static JsonObject DefaultPresets() => new()
     {
-        ["평소용"] = new JsonObject { ["max-size"] = "1850", ["max-fps"] = "120", ["video-bit-rate"] = "8M", ["keyboard"] = "uhid", ["__extra"] = "" },
+        ["평소용"] = new JsonObject { ["max-size"] = "1440", ["max-fps"] = "60", ["video-bit-rate"] = "8M", ["keyboard"] = "uhid", ["__extra"] = "" },
         ["고화질"] = new JsonObject { ["max-size"] = "1920", ["max-fps"] = "120", ["video-bit-rate"] = "16M", ["video-codec"] = "h265", ["keyboard"] = "uhid", ["__extra"] = "" },
         ["가볍게"] = new JsonObject { ["max-size"] = "1080", ["max-fps"] = "60", ["video-bit-rate"] = "4M", ["video-codec"] = "h265", ["keyboard"] = "uhid", ["turn-screen-off"] = true, ["__extra"] = "" },
         ["가로화면"] = new JsonObject { ["max-size"] = "", ["max-fps"] = "120", ["video-bit-rate"] = "8M", ["keyboard"] = "uhid", ["new-display"] = "1920x1080", ["__extra"] = "" },
@@ -1244,8 +1256,8 @@ public partial class MainWindow : Window
 
     private static IReadOnlyList<OptionDefinition> Definitions() =>
     [
-        new("화면", "max-size", "해상도 상한", OptionKind.EditableCombo, "--max-size={0}", "1850", Items: [DefaultChoice, "3088", "2560", "1920", "1850", "1600", "1440", "1280", "1080", "720"], Hint: "긴 변 픽셀 하나만 넣습니다. 1920=FHD, 1440=HD+"),
-        new("화면", "max-fps", "최대 프레임", OptionKind.EditableCombo, "--max-fps={0}", "120", Items: [DefaultChoice, "144", "120", "90", "60", "30"], Hint: "높을수록 부드럽지만 데이터·발열이 증가합니다."),
+        new("화면", "max-size", "해상도 상한", OptionKind.EditableCombo, "--max-size={0}", "1440", Items: [DefaultChoice, "3088", "2560", "1920", "1850", "1600", "1440", "1280", "1080", "720"], Hint: "긴 변 픽셀 하나만 넣습니다. 1920=FHD, 1440=HD+"),
+        new("화면", "max-fps", "최대 프레임", OptionKind.EditableCombo, "--max-fps={0}", "60", Items: [DefaultChoice, "144", "120", "90", "60", "30"], Hint: "높을수록 부드럽지만 데이터·발열이 증가합니다."),
         new("화면", "video-bit-rate", "화질", OptionKind.EditableCombo, "--video-bit-rate={0}", "8M", Items: [DefaultChoice, "32M", "16M", "12M", "8M", "4M", "2M"], Hint: "높을수록 선명하지만 지연·데이터가 증가합니다."),
         new("화면", "video-codec", "영상 코덱", OptionKind.Combo, "--video-codec={0}", DefaultChoice, Items: [DefaultChoice, "h264", "h265", "av1"], Hint: "h265는 같은 화질에서 데이터가 적습니다."),
         new("화면", "orientation", "화면 방향", OptionKind.Combo, "--orientation={0}", DefaultChoice, Items: [DefaultChoice, "0", "90", "180", "270", "flip0", "flip90", "flip180", "flip270"], Hint: "창에 보이는 방향만 회전합니다."),

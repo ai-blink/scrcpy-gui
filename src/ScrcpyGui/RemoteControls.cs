@@ -58,7 +58,7 @@ internal sealed partial class RemoteControls : IDisposable
         catch (Exception ex) { _settings = new(); _loadError = ex.Message; }
         var page = new StackPanel { Margin = new Thickness(20) };
         page.Children.Add(new TextBlock { Text = "휴대폰 외부 조작판", FontSize = 24, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 14) });
-        page.Children.Add(new TextBlock { Text = "미러링 창이 하나면 자동으로 연결 대상을 고릅니다. ‘사용하기’로 조작판을 켜세요.", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new Thickness(0, 0, 0, 12) });
+        page.Children.Add(new TextBlock { Text = "미러링 창이 하나면 자동으로 연결 대상을 고릅니다. 새 창 실행 시 조작판도 함께 켜집니다.", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new Thickness(0, 0, 0, 12) });
         var targetSection = new StackPanel();
         page.Children.Add(new Border { Child = targetSection, Padding = new Thickness(12), Background = new SolidColorBrush(Color.FromRgb(22, 22, 24)), CornerRadius = new CornerRadius(10), Margin = new Thickness(0, 0, 0, 12) });
         var targetRow = new DockPanel();
@@ -332,6 +332,26 @@ internal sealed partial class RemoteControls : IDisposable
         catch (Exception ex) { _targetStatus.Text = "창 목록 읽기 실패: " + ex.Message; }
         finally { _refreshingTargets = false; }
     }
+    private int _launchRequest;
+    internal async Task StartForSessionAsync(int processId)
+    {
+        var request = ++_launchRequest;
+        for (var attempt = 0; attempt < 20 && !_disposed && request == _launchRequest; attempt++)
+        {
+            await Refresh();
+            if (_disposed || request != _launchRequest) return;
+            var target = _targets.Items.OfType<MirrorTarget>().FirstOrDefault(t => t.Pid == processId);
+            if (target is not null)
+            {
+                _targets.SelectedItem = target;
+                Start();
+                return;
+            }
+            await Task.Delay(150);
+        }
+        if (!_disposed && request == _launchRequest) Notice("새 미러링 창의 조작판을 연결하지 못했습니다. 다시 찾기로 창을 선택하세요.");
+    }
+
     private void TargetChanged()
     {
         Pause(); _target = _targets.SelectedItem as MirrorTarget; _calibrated = false; _lastWindow = default;

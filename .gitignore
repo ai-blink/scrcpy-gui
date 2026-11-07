@@ -11,3 +11,6 @@ scrcpy_my.bat
 app/
 **/bin/
 **/obj/
+
+# Local isolated VMs and private test artifacts
+work/

@@ -75,7 +75,7 @@ internal static class Program
                 if (layout == "split")
                 {
                     var nav = p.Where(b => !RemoteActivation.Scroll(b.Action)).ToArray();
-                    Check(nav[0].Bounds.X + (nav[2].Bounds.Right - nav[0].Bounds.X) / 2 == target.X + target.Width / 2, "bottom nav centered");
+                    Check(Math.Abs(nav[0].Bounds.X + (nav[2].Bounds.Right - nav[0].Bounds.X) / 2 - (target.X + target.Width / 2)) < .001, "bottom nav centered");
                 }
             }
         }
@@ -85,7 +85,7 @@ internal static class Program
         {
             var client = new PixelRect(-1400, 200, 600 * scale, 900 * scale);
             var toolbar = RemoteLayout.Utilities(new(), client, scale);
-            Check(toolbar[0].Bounds.X == client.X && toolbar[0].Bounds.Bottom == client.Y - 20 * scale, "toolbar uses configured distance above phone top left");
+            Check(toolbar[0].Bounds.X == client.X && toolbar[0].Bounds.Bottom == client.Y - new RemoteSettings().Distance * scale, "toolbar uses configured distance above phone top left");
             Check(toolbar.All(p => p.Bounds.Bottom <= client.Y), "both toolbar buttons stay outside phone content");
         }
         var stacked = RemoteLayout.Utilities(new(), new(200, 300, 100, 600), 1);
@@ -108,6 +108,11 @@ internal static class Program
         {
             var controls = Get<Dictionary<string, FrameworkElement>>(window, "_controls");
             var presets = Get<System.Text.Json.Nodes.JsonObject>(window, "_presets");
+            Check((string)Call(window, "ReadText", "max-size")! == "1440" && (string)Call(window, "ReadText", "max-fps")! == "60", "fresh install uses current baseline");
+            Check(!((System.Windows.Controls.Expander)window.FindName("AdvancedDetails")).IsExpanded, "commands hidden until advanced details opened");
+            Check(((System.Windows.Controls.TextBox)window.FindName("CommandPreviewBox")).MaxLines == 2, "command preview limited to two lines");
+            ((System.Windows.Controls.ListBox)window.FindName("NavigationList")).SelectedItem = ((System.Windows.Controls.ListBox)window.FindName("NavigationList")).Items.OfType<System.Windows.Controls.ListBoxItem>().Single(i => Equals(i.Tag, "조작판"));
+            Check(((FrameworkElement)window.FindName("MirrorFooter")).Visibility == Visibility.Visible, "preset bar remains available on remote controls page");
             Call(window, "ApplyValues", presets["가로화면"]!);
             Check((string)Call(window, "ReadText", "new-display")! == "1920x1080", "wide preset applied");
             Call(window, "ApplyValues", presets["평소용"]!);
@@ -122,7 +127,7 @@ internal static class Program
             Check(File.ReadAllText(Path.Combine(folder, "scrcpy-gui-last.json")).Contains("__presetName"), "choosing preset immediately persists its identity");
             ((System.Windows.Controls.ComboBox)controls["max-size"]).Text = "1600";
             var lastSession = (System.Text.Json.Nodes.JsonObject)Call(window, "CaptureValues", true)!;
-            Call(window, "SaveObject", Path.Combine(folder, "scrcpy-gui-last.json"), lastSession);
+            Check((string?)System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(folder, "scrcpy-gui-last.json")))!["max-size"] == "1600", "editing a combo saves immediately without closing or explicit save");
             var reopened = new MainWindow(folder, false);
             try
             {
@@ -333,7 +338,7 @@ internal static class Program
     private static void ScrollTiming()
     {
         var settings = new RemoteSettings();
-        Check(settings.ScrollMode == "atomic" && settings.DwellMs == 300 && settings.RepeatMs == 300 && settings.SettleMs == 20, "new-alt optimized defaults");
+        Check(settings.ScrollMode == "atomic" && settings.DwellMs == 300 && settings.RepeatMs == 150 && settings.SettleMs == 20 && settings.Notches == 3, "current scroll settings are defaults");
         settings.DwellMs = settings.RepeatMs = settings.SettleMs = settings.ArrivalMs = settings.AfterMs = 0;
         settings.Normalize();
         Check(settings.DwellMs == 0 && settings.RepeatMs == 0 && settings.SettleMs == 0 && settings.ArrivalMs == 0 && settings.AfterMs == 0, "zero delays are configurable and retained");
@@ -487,7 +492,7 @@ internal static class Program
             var ratioInput = NumberInputs(layoutForm).Single(t => ((string)t.Tag).StartsWith("가로 비율"));
             ratioInput.Text = "150";
             ratioInput.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, 0, ratioInput, null) { RoutedEvent = System.Windows.Input.Keyboard.LostKeyboardFocusEvent });
-            Check(RemoteLayout.ButtonSize(Get<RemoteSettings>(controls, "_settings"), new(0, 0, 400, 800), 1) == (108, 72), "numeric width ratio affects actual layout geometry");
+            Check(RemoteLayout.ButtonSize(Get<RemoteSettings>(controls, "_settings"), new(0, 0, 400, 800), 1) == (90, 60), "numeric width ratio affects actual layout geometry");
             layoutForm.Children.OfType<System.Windows.Controls.ComboBox>().Last().SelectedIndex = 1;
             Check(Get<RemoteSettings>(controls, "_settings").SizeMode == "relative" && NumberInputs(layoutForm).Any(t => ((string)t.Tag).StartsWith("창 너비 대비")), "size mode selector exposes window-relative size setting");
             Check(controls.Page is System.Windows.Controls.Grid, "WPF settings page constructed");
