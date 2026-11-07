@@ -22,6 +22,7 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length >= 1 && args[0] == "devices") return FakeAdbDevices();
         if (args.Contains("--pipe-child")) { Thread.Sleep(5000); return 0; }
         if (args.Length == 2 && args[0] == "--spawn-pipe-child")
         {
@@ -229,6 +230,35 @@ internal static class Program
                 }
                 monitor.GetAwaiter().GetResult();
                 Check(((System.Windows.Controls.TextBlock)window.FindName("SessionStatusText")).Text.Contains("실패 · 종료 코드 7"), "early session exit is reported as failure instead of launched");
+                // 첫 실행 직후처럼 폰이 늦게 붙는 상황: 이 실행 파일이 가짜 adb 노릇을 하며 N번째 호출부터 폰을 보고한다.
+                void PumpTask(Task task)
+                {
+                    if (!task.IsCompleted) { var frame = new DispatcherFrame(); _ = task.ContinueWith(_ => dispatcher.BeginInvoke(new Action(() => frame.Continue = false))); Dispatcher.PushFrame(frame); }
+                    task.GetAwaiter().GetResult();
+                }
+                var counterPath = Path.Combine(folder, "fake-adb-calls.txt");
+                var phone = "adb-FAKE1234-abcdef._adb-tls-connect._tcp";
+                var online = Get<HashSet<string>>(window, "_onlineDeviceIds");
+                Set(window, "_adbPath", Environment.ProcessPath);
+                Environment.SetEnvironmentVariable("SCRCPY_GUI_FAKE_ADB_COUNTER", counterPath);
+                Environment.SetEnvironmentVariable("SCRCPY_GUI_FAKE_ADB_ONLINE_AFTER", "2");
+                try
+                {
+                    var confirm = (Task<bool>)Call(window, "ConfirmDeviceOnlineAsync", phone)!; PumpTask(confirm);
+                    Check(confirm.Result && online.Contains(phone) && File.ReadAllText(counterPath) == "2", "run re-checks a stale device list before refusing and picks up the phone on a later poll");
+                    online.Clear(); File.Delete(counterPath);
+                    PumpTask((Task)Call(window, "WaitForPhoneAfterStartupAsync", 5)!);
+                    Check(online.Contains(phone) && File.ReadAllText(counterPath) == "2", "startup keeps asking until the phone attaches after the adb server cold start");
+                    online.Clear(); File.Delete(counterPath);
+                    Environment.SetEnvironmentVariable("SCRCPY_GUI_FAKE_ADB_ONLINE_AFTER", "99");
+                    var refused = (Task<bool>)Call(window, "ConfirmDeviceOnlineAsync", phone)!; PumpTask(refused);
+                    Check(!refused.Result && !online.Contains(phone) && ((System.Windows.Controls.Button)window.FindName("RunButton")).IsEnabled, "run gives up after the short confirmation window and re-enables the button");
+                }
+                finally
+                {
+                    Environment.SetEnvironmentVariable("SCRCPY_GUI_FAKE_ADB_COUNTER", null);
+                    Environment.SetEnvironmentVariable("SCRCPY_GUI_FAKE_ADB_ONLINE_AFTER", null);
+                }
             }
             finally { SynchronizationContext.SetSynchronizationContext(oldContext); }
         }
@@ -575,6 +605,17 @@ internal static class Program
 
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     private static IEnumerable<System.Windows.Controls.TextBox> NumberInputs(System.Windows.Controls.Panel panel) => panel.Children.OfType<System.Windows.Controls.Grid>().SelectMany(g => g.Children.OfType<System.Windows.Controls.StackPanel>()).SelectMany(p => p.Children.OfType<System.Windows.Controls.TextBox>());
+    // 가짜 adb: 호출 횟수를 파일에 세어 N번째 호출부터 폰이 붙은 것으로 답한다(첫 실행 직후 폰이 늦게 붙는 상황 재현).
+    private static int FakeAdbDevices()
+    {
+        var counter = Environment.GetEnvironmentVariable("SCRCPY_GUI_FAKE_ADB_COUNTER");
+        var onlineAfter = int.Parse(Environment.GetEnvironmentVariable("SCRCPY_GUI_FAKE_ADB_ONLINE_AFTER") ?? "1");
+        var calls = counter is not null && File.Exists(counter) ? int.Parse(File.ReadAllText(counter)) + 1 : 1;
+        if (counter is not null) File.WriteAllText(counter, calls.ToString());
+        Console.WriteLine("List of devices attached");
+        if (calls >= onlineAfter) Console.WriteLine("adb-FAKE1234-abcdef._adb-tls-connect._tcp\tdevice product:fake model:SM_FAKE device:fake transport_id:1");
+        return 0;
+    }
     private static void Set(object owner, string field, object? value) => owner.GetType().GetField(field, PrivateInstance)!.SetValue(owner, value);
     private static T Get<T>(object owner, string field) => (T)owner.GetType().GetField(field, PrivateInstance)!.GetValue(owner)!;
     private static object? Call(object owner, string method, params object?[] args) => owner.GetType().GetMethod(method, PrivateInstance)!.Invoke(owner, args);

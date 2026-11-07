@@ -77,6 +77,7 @@ public partial class MainWindow : Window
             if (_remoteControls.HasSelectedTarget)
                 NavigationList.SelectedItem = NavigationList.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, "조작판"));
             await RefreshDevicesAsync();
+            if (_adbPath is not null && !HasOnlineDevice()) await WaitForPhoneAfterStartupAsync(10);
         };
     }
 
@@ -490,6 +491,62 @@ public partial class MainWindow : Window
         return false;
     }
 
+    // 첫 실행이면 시작 조회가 adb 서버를 막 띄운 직후라 답이 서버 기동 9ms 만에 온다. 무선 폰은 서버 기동 뒤
+    // 0.45~0.7초(adb.log 실측)에야 mDNS로 붙으므로 한 번 묻고 끝내면 "기기 없음"으로 굳고 앱을 껐다 켜야만 보인다.
+    // 잠시 더 지켜보되 사용자가 새로고침·기기 찾기를 누르면 그쪽에 맡기고 물러난다. 연결 작업 게이트는 잡지 않는다.
+    private async Task WaitForPhoneAfterStartupAsync(int seconds)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        try
+        {
+            while (DateTime.UtcNow < deadline)
+            {
+                SetStatus($"폰이 스스로 붙기를 기다립니다… {Math.Ceiling((deadline - DateTime.UtcNow).TotalSeconds):0}초");
+                await Task.Delay(700, _lifetime.Token);
+                if (_refreshing || _connectionCancellation is not null) return;
+                var devices = await GetAdbDevicesAsync();
+                if (_refreshing || _connectionCancellation is not null) return;
+                if (!devices.Any(device => device.State == "device")) continue;
+                PopulateDevices(devices);
+                if (_backgroundServices) await SyncPhonePreferencesAsync();
+                return;
+            }
+            SetStatus("연결된 기기 없음 — 기기 찾기를 눌러보세요.");
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { SetStatus("기기 확인 실패 · " + ex.Message); }
+    }
+
+    // 실행 직전의 기기 목록은 옛것일 수 있다(첫 실행 직후 폰이 막 붙는 중, 깨어난 폰이 다시 붙은 뒤 등).
+    // 거절하기 전에 최대 3초 다시 확인하고, 다른 조회가 진행 중이면 그 결과를 기다린다.
+    private async Task<bool> ConfirmDeviceOnlineAsync(string deviceId)
+    {
+        if (_adbPath is null) return false;
+        RunButton.IsEnabled = false;
+        SetStatus("폰 연결을 다시 확인합니다…");
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(3);
+            while (true)
+            {
+                if (_refreshing || _connectionCancellation is not null)
+                {
+                    if (_onlineDeviceIds.Contains(deviceId)) return true;
+                }
+                else
+                {
+                    var devices = await GetAdbDevicesAsync();
+                    if (devices.Any(device => device.State == "device" && device.Id == deviceId)) { PopulateDevices(devices); return true; }
+                }
+                if (DateTime.UtcNow >= deadline) return false;
+                await Task.Delay(400, _lifetime.Token);
+            }
+        }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception ex) { SetStatus("기기 확인 실패 · " + ex.Message); return false; }
+        finally { RunButton.IsEnabled = true; }
+    }
+
     private async Task<List<DeviceInfo>> GetAdbDevicesAsync()
     {
         var result = await RunAdbAsync(["devices", "-l"]);
@@ -871,7 +928,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "scrcpy.exe를 찾지 못했습니다. 설정 탭에서 위치를 지정하세요.", "실행", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
-        if (EffectiveDeviceId() is string selected && !_onlineDeviceIds.Contains(selected))
+        if (EffectiveDeviceId() is string selected && !_onlineDeviceIds.Contains(selected) && !await ConfirmDeviceOnlineAsync(selected))
         {
             MessageBox.Show(this, "고른 기기가 현재 연결돼 있지 않습니다. 기기 찾기로 연결한 뒤 실행하세요.", "실행", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
