@@ -21,17 +21,22 @@ internal sealed class RemoteButtonVisual : Grid
         Children.Add(_surface); Children.Add(_fill); Children.Add(_caption); Children.Add(_bar); Children.Add(_ring);
         SizeChanged += (_, _) => DrawGauge();
     }
+    // Run state must be readable at a glance: the toggle shows it as green/red,
+    // and paused action buttons get a red frame (they also dim their caption).
+    internal const string RunningColor = "#2E7D32", PausedColor = "#C62828";
     internal static SolidColorBrush Brush(string hex) => new((Color)ColorConverter.ConvertFromString(hex));
     public void Paint(RemoteSettings settings, RemoteAction action, double progress, bool hover, bool enabled, bool flash = false)
     {
         _settings = settings; _progress = Math.Clamp(progress, 0, 1);
         Opacity = settings.ButtonOpacity / 100.0;
+        var toggle = action == RemoteAction.Stop;
+        var pausedAction = !enabled && action is not RemoteAction.Stop and not RemoteAction.Settings;
         _surface.CornerRadius = new CornerRadius(settings.CornerRadius);
-        _surface.Background = Brush(flash ? settings.CompletionColor : settings.BackgroundColor);
-        _surface.BorderBrush = Brush(hover ? settings.GaugeColor : settings.BorderColor);
-        _surface.BorderThickness = new Thickness(hover ? 2 : 1);
+        _surface.Background = Brush(flash ? settings.CompletionColor : toggle ? enabled ? RunningColor : PausedColor : settings.BackgroundColor);
+        _surface.BorderBrush = Brush(hover ? settings.GaugeColor : pausedAction ? PausedColor : settings.BorderColor);
+        _surface.BorderThickness = new Thickness(hover || pausedAction ? 2 : 1);
         _caption.Foreground = Brush(settings.FontColor); _caption.FontSize = settings.FontSize;
-        _caption.Text = action == RemoteAction.Stop ? enabled ? "Ⅱ\n일시 정지" : "▶\n사용 시작" : RemoteButtonWindow.Glyph(action) + "\n" + RemoteButtonWindow.Label(action);
+        _caption.Text = toggle ? enabled ? "●\n사용 중" : "Ⅱ\n정지 중" : RemoteButtonWindow.Glyph(action) + "\n" + RemoteButtonWindow.Label(action);
         _caption.Opacity = enabled || action is RemoteAction.Stop or RemoteAction.Settings ? 1 : .45;
         _fill.Background = Brush(settings.GaugeColor); _fill.Opacity = .35;
         _bar.Background = Brush(settings.GaugeColor); _ring.Stroke = Brush(settings.GaugeColor);

@@ -75,7 +75,10 @@ public partial class MainWindow : Window
             if (!_backgroundServices) return;
             await _remoteControls.Refresh();
             if (_remoteControls.HasSelectedTarget)
+            {
                 NavigationList.SelectedItem = NavigationList.Items.OfType<ListBoxItem>().First(i => Equals(i.Tag, "조작판"));
+                await _remoteControls.StartSelectedAsync();
+            }
             await RefreshDevicesAsync();
             if (_adbPath is not null && !HasOnlineDevice()) await WaitForPhoneAfterStartupAsync(10);
         };

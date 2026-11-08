@@ -141,7 +141,7 @@ internal sealed partial class RemoteControls : IDisposable
         AddButton(advancedActions, "창과 버튼을 화면 안으로 옮기기", FitTogether);
         var dock = new StackPanel { Margin = new Thickness(12, 8, 12, 8) };
         var actions = new WrapPanel();
-        AddButton(actions, "▶ 사용하기", Start);
+        AddButton(actions, "▶ 사용하기", () => Start());
         AddButton(actions, "Ⅱ 일시 정지", Pause);
         AddButton(actions, "조작판 끄기", HideControls);
         dock.Children.Add(_runState); dock.Children.Add(actions);
@@ -352,6 +352,16 @@ internal sealed partial class RemoteControls : IDisposable
         if (!_disposed && request == _launchRequest) Notice("새 미러링 창의 조작판을 연결하지 못했습니다. 다시 찾기로 창을 선택하세요.");
     }
 
+    // GUI startup with an already-open mirror: start like "새 창 실행" does.
+    // The relay thread may still be installing its hook, so wait briefly for it.
+    internal async Task StartSelectedAsync()
+    {
+        for (var attempt = 0; attempt < 20 && !_disposed && !_relay.View.InputReady; attempt++) await Task.Delay(50);
+        // Windows may refuse foreground to a GUI launched in the background. Each
+        // action re-checks focus before sending input, so starting here is safe.
+        if (!_disposed && _target is not null && !_enabled) Start(requireFocus: false);
+    }
+
     private void TargetChanged()
     {
         Pause(); _target = _targets.SelectedItem as MirrorTarget; _calibrated = false; _lastWindow = default;
@@ -380,7 +390,7 @@ internal sealed partial class RemoteControls : IDisposable
             _targetStatus.Text = targets.Count == 0 ? "미러링 창을 기다리는 중 · 창을 열면 자동으로 찾습니다." : selected is not null ? selected.Error.Length != 0 ? selected.Error : $"자동 선택 · {selected.Title}" : "미러링 창이 여러 개입니다. 조작할 창을 골라 주세요.";
         }
     }
-    private void Start()
+    private void Start(bool requireFocus = true)
     {
         if (_loadError.Length != 0) { Notice(_loadError); return; }
         if (_target is null || !Valid(_target)) { Notice("미러링 창을 먼저 선택하세요."); return; }
@@ -389,7 +399,8 @@ internal sealed partial class RemoteControls : IDisposable
         if (!_calibrated) PrepareScrollPoint();
         if (!_relay.View.InputReady) { Notice("입력 준비가 되지 않았습니다. " + _relay.View.Status); return; }
         try { Focus(_target); }
-        catch (Exception ex) { Notice(ex.Message); return; }
+        catch (Exception ex) when (requireFocus) { Notice(ex.Message); return; }
+        catch (InvalidOperationException) { /* auto start: the phone window stays where it is */ }
         _notice = "";
         _visible = true; _enabled = true; _revision++;
         _settings.TargetHint = _target.Title; Save(); Update();
@@ -460,7 +471,7 @@ internal sealed partial class RemoteControls : IDisposable
         if (_disposed) return;
         var view = _relay.View;
         _runState.Text = _covered ? "휴대폰 창이 가려져 버튼을 숨겼습니다." : _enabled ? $"● 사용 중 · {(_settings.Activation == "dwell" ? $"{_settings.DwellMs / 1000.0:0.##}초 바라보면 실행" : "클릭하면 실행")}" : _target is null ? "먼저 휴대폰 창을 골라 주세요." : "Ⅱ 일시 정지 · ‘사용하기’를 누르면 버튼이 작동합니다.";
-        _runState.Foreground = _enabled && !_covered ? Brushes.LightGreen : Brushes.LightSteelBlue;
+        _runState.Foreground = _covered ? Brushes.LightSteelBlue : _enabled ? Brushes.LightGreen : _target is null ? Brushes.LightSteelBlue : Brushes.Salmon;
         if (_covered) _pointer.Hide(); else _pointer.Update(view);
         _status.Text = _loadError.Length != 0 ? _loadError : _notice.Length != 0 ? _notice : _layoutMessage.Length != 0 ? _layoutMessage : view.Status;
         _noticeBanner.Text = _loadError.Length != 0 ? _loadError : _notice.Length != 0 ? _notice : _layoutMessage;
