@@ -1,1 +1,1 @@
-2026-10-29 README and CHANGELOG updated for remote controls, GUI UX, runtime feedback, preset restoration, and validation boundaries. Regression: 1746 assertions; with rendering: 1752. Published release remains v0.3.0; app/ was not republished.
+2026-11-09 v0.4.0 README, CHANGELOG and version updated; app/ republished and GitHub release v0.4.0.
