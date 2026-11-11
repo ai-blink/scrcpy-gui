@@ -5,18 +5,27 @@ scrcpy는 옵션이 100개가 넘는데 전부 명령줄로 넣어야 해서, �
 
 scrcpy 자체를 대체하지 않습니다. **실행 옵션·연결 상태를 관리하고, 미러링 창 밖의 조작 버튼을 제공**합니다.
 
-> 게시된 릴리스: **v0.4.0** · 아래 설명은 2026-11-09 `main` 기준입니다. 변경 이력은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요.
+> 최신 릴리스: [**v0.5.0**](https://github.com/ai-blink/scrcpy-gui/releases/tag/v0.5.0) · 2026-11-11 · Blink Link Android **0.3.2** 동봉. 변경 이력은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요.
 
 ![scrcpy 설정 GUI — 일반 옵션과 접힌 명령어 영역](assets/scrcpy-gui-ui-refresh.png)
 
 왼쪽에서 범주를 고르고, 하단의 **명령어 · 직접 인자**를 펼쳐 실행될 명령을 확인합니다.
 위 이미지는 실제 기기 정보 없이 생성한 WPF 테스트 렌더링입니다.
 
+## 다운로드
+
+- [Windows 통합 ZIP](https://github.com/ai-blink/scrcpy-gui/releases/download/v0.5.0/ScrcpyGui-v0.5.0-win-x64.zip): 실행 파일·PC/Android HTML 설명서·APK를 함께 제공합니다. 압축을 풀고 `ScrcpyGui.exe`를 실행하세요.
+- [PC 실행 파일만](https://github.com/ai-blink/scrcpy-gui/releases/download/v0.5.0/ScrcpyGui.exe): .NET 런타임과 Blink Link APK를 포함합니다.
+- [Android APK](https://github.com/ai-blink/scrcpy-gui/releases/download/v0.5.0/BlinkLink-0.3.2-debug.apk): 직접 설치가 필요한 경우 사용할 수 있습니다. 일반 사용자는 PC의 Blink Link 설정 버튼으로 준비하면 됩니다.
+- [PC HTML 설명서](scrcpy-install-guide.html) · [Android HTML 설명서](android/manual.html).
+
+scrcpy와 adb 자체는 포함하지 않습니다. [scrcpy 공식 Windows 배포본](https://github.com/Genymobile/scrcpy/releases/latest)을 별도로 준비한 뒤 PC 앱의 설정에서 실행 파일을 지정하세요. SHA-256 목록은 릴리스의 `SHA256SUMS.txt`로 제공합니다.
+
 ## Blink Link 휴대폰 앱 준비
 
 상단 **Blink Link 설정**에서 연결된 휴대폰을 고르고 **이 휴대폰에 설치 · 권한 설정**을 누르세요. APK가 PC 실행 파일에 포함돼 있으며, 설치와 최초 권한 부여 후 실제 적용을 확인하고 휴대폰에서 앱을 엽니다. 주소나 ADB 명령을 직접 입력할 필요가 없습니다. 처음 연결하는 휴대폰은 먼저 기존 **페어링** 또는 **기기 찾기**를 사용합니다.
 
-끝나면 휴대폰 앱의 설정에서 위치·알림 권한을 허용하고 사용할 Wi-Fi를 등록하세요. [HTML 설명서](android/manual.html)와 [PC 준비 기능 검증](notes/BLINK-LINK-PC-SETUP.md)을 참조하세요.
+끝나면 휴대폰 앱의 설정에서 위치·알림 권한을 허용하고 사용할 Wi-Fi를 등록하세요. [Android HTML 설명서](android/manual.html)와 [PC 준비 기능 검증](notes/BLINK-LINK-PC-SETUP.md)을 참조하세요.
 
 ## 화면 구성
 
@@ -49,7 +58,7 @@ scrcpy 자체를 대체하지 않습니다. **실행 옵션·연결 상태를 �
 | .NET | 없음 (배포본) | `app\ScrcpyGui.exe`는 .NET 런타임을 포함합니다. 소스에서 배포본을 만들 때만 .NET 8 SDK가 필요합니다 |
 | scrcpy | 공식 최신 Windows 64비트 ZIP | Android 16 폰이면 **4.0 이상 필요** (그 미만은 크래시) |
 | adb | platform-tools | scrcpy 공식 배포판에 대부분 같이 들어 있습니다 |
-| 폰 | Android 5.0+ | 무선으로 쓰려면 **Android 11+** |
+| 폰 | scrcpy 기본 Android 5.0+ | 무선 페어링 및 Blink Link는 **Android 11+** |
 
 ## 실행
 
@@ -63,7 +72,7 @@ scrcpy 자체를 대체하지 않습니다. **실행 옵션·연결 상태를 �
 ```
 
 `scrcpy-gui.bat`와 `scrcpy_run.bat`는 기존 바로가기 호환용입니다. 배포본이 없을 때만 위 WPF 앱을 빌드한 뒤
-`app\ScrcpyGui.exe`를 엽니다. PowerShell 7은 더 이상 실행 요구사항이 아닙니다.
+`app\ScrcpyGui.exe`를 엽니다. PowerShell 7은 더 이상 실행 요구사항이 아닙니다. 소스에서 PC 앱을 빌드할 때는 동봉할 Android APK도 필요합니다. `publish-wpf.ps1`은 APK가 없으면 `android/build.ps1`을 먼저 실행하며 Java 17·Android platform 36·build-tools 36.0.0이 필요합니다. 릴리스 실행 파일을 받는 사용자에게는 빌드 도구가 필요하지 않습니다.
 
 `scrcpy.exe`와 `adb.exe`는 **자동으로 찾습니다.** 찾는 순서는 다음과 같습니다.
 
@@ -305,3 +314,11 @@ Copyright © 2026 장익선(BlinkLabs). All rights reserved. 자세한 내용은
 
 - scrcpy © Genymobile — [Apache-2.0](https://github.com/Genymobile/scrcpy/blob/master/LICENSE).
   이 저장소는 scrcpy를 **포함하지 않고 실행만** 합니다. scrcpy는 따로 받아야 합니다.
+
+## v0.5.0 검증 범위
+
+Blink Link PC 준비 로직23개 검사, 고정된 Hyper-V 게스트의 WPF UI8개 검사, Android16 AVD의 실제 설치·권한 부여·확인·앱 열기와 APK0.3.2 안내 화면을 확인했습니다. 무선 복구 정책·예산 및 음성 세션32개 검사도 통과했습니다. Windows UI 검사는 가짜 ADB를 사용했고 실제 ADB 동작은 별도 Android AVD에서 확인했습니다. 삼성 실물 기기의 절전·네트워크 신뢰 유지·음성 출력은 검증되지 않았습니다.
+
+매크로는 현재 시간·충전·Wi-Fi·화면·수동 조건과 순서 있는7가지 동작을 지원합니다. 변수·분기·반복·화면 자동 클릭 등 MacroDroid 전체 기능은 포함하지 않습니다. [매크로 안내](android/MACROS.md)와 [PC 준비 검사 기록](notes/BLINK-LINK-PC-SETUP.md)을 참고하세요.
+
+소스 빌드에서 공개 릴리스와 같은 APK를 동봉하려면 릴리스의 `BlinkLink-0.3.2-debug.apk`를 `app/android/`에 먼저 놓습니다. Android APK를 직접 다시 빌드했다면 PC 소스의 `BlinkLinkProvisioner.ApkSha256`도 새 산출물 해시에 맞춰 갱신해야 합니다.
