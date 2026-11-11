@@ -10,7 +10,7 @@ public final class MacroStore {
     // plus names, metadata and pretty-print whitespace, fits below 16 MiB.
     public static final int MAX_BACKUP_BYTES=16*1024*1024;
     public static final String[] TRIGGERS={"수동 실행","매일 지정 시각","충전 시작","충전 종료","Wi-Fi 연결","화면 켜짐","잠금 해제"};
-    public static final String[] ACTIONS={"알림 표시","텍스트 읽기","기다리기 (초)","앱 열기 (패키지 이름)","미디어 음량 (0~100)","진동 (밀리초)","무선 디버깅 복구"};
+    public static final String[] ACTIONS={"알림 표시","텍스트 읽기","기다리기 (초)","앱 열기","미디어 음량","진동","무선 디버깅 복구"};
     public static SharedPreferences prefs(Context c){return c.getSharedPreferences("macros",0);}
     public static JSONArray all(Context c){try{return new JSONArray(prefs(c).getString("definitions","[]"));}catch(JSONException e){throw new IllegalStateException("저장된 매크로를 읽을 수 없습니다",e);}}
     public static JSONObject find(Context c,String id){JSONArray a=all(c);for(int i=0;i<a.length();i++)if(a.optJSONObject(i).optString("id").equals(id))return a.optJSONObject(i);return null;}

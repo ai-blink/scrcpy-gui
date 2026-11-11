@@ -12,6 +12,10 @@ scrcpy 자체를 대체하지 않습니다. **실행 옵션·연결 상태를 �
 왼쪽에서 범주를 고르고, 하단의 **명령어 · 직접 인자**를 펼쳐 실행될 명령을 확인합니다.
 위 이미지는 실제 기기 정보 없이 생성한 WPF 테스트 렌더링입니다.
 
+## 로컬 매크로 UX 개선판
+
+현재 작업공간의 PC0.5.1 / Android0.4.0은 앱 목록·시각·Wi-Fi 선택, 대기/음량/진동 조절기, 예제 시작과 고정 저장 버튼을 제공합니다. [변경·검사](android/MACRO-UX-0.4.0.md)를 참조하세요. 아래 공개 v0.5.0 다운로드는 이전 Android0.3.2를 포함합니다.
+
 ## 다운로드
 
 - [Windows 통합 ZIP](https://github.com/ai-blink/scrcpy-gui/releases/download/v0.5.0/ScrcpyGui-v0.5.0-win-x64.zip): 실행 파일·PC/Android HTML 설명서·APK를 함께 제공합니다. 압축을 풀고 `ScrcpyGui.exe`를 실행하세요.
@@ -322,3 +326,5 @@ Blink Link PC 준비 로직23개 검사, 고정된 Hyper-V 게스트의 WPF UI8�
 매크로는 현재 시간·충전·Wi-Fi·화면·수동 조건과 순서 있는7가지 동작을 지원합니다. 변수·분기·반복·화면 자동 클릭 등 MacroDroid 전체 기능은 포함하지 않습니다. [매크로 안내](android/MACROS.md)와 [PC 준비 검사 기록](notes/BLINK-LINK-PC-SETUP.md)을 참고하세요.
 
 소스 빌드에서 공개 릴리스와 같은 APK를 동봉하려면 릴리스의 `BlinkLink-0.3.2-debug.apk`를 `app/android/`에 먼저 놓습니다. Android APK를 직접 다시 빌드했다면 PC 소스의 `BlinkLinkProvisioner.ApkSha256`도 새 산출물 해시에 맞춰 갱신해야 합니다.
+
+현재 로컬 개발본 PC0.5.1은 Android0.4.0을 동봉합니다. 이 개발본을 소스 빌드하려면 `android/build.ps1`로 APK를 만들고 PC의 APK 해시 상수를 그 산출물에 맞춰야 합니다. 위 공개0.3.2 APK 경로는 v0.5.0 태그 빌드에 해당합니다.

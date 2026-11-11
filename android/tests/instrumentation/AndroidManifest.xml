@@ -2,4 +2,5 @@
 <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="36" />
 <application android:label="Blink Link isolated tests" />
 <instrumentation android:name="kr.blinklabs.blinklink.tests.MacroInstrumentation" android:targetPackage="kr.blinklabs.blinklink" />
+<instrumentation android:name="kr.blinklabs.blinklink.tests.MacroUxReadout" android:targetPackage="kr.blinklabs.blinklink" />
 </manifest>

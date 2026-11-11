@@ -8,19 +8,19 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null
 if($project.Project.PropertyGroup.Version -ne $Version){throw 'Project version differs from release version'}
 & (Join-Path $root 'publish-wpf.ps1')
 if($LASTEXITCODE -ne 0){throw 'Publish failed'}
-$exe=Join-Path $root 'app\ScrcpyGui.exe';$apk=Join-Path $root 'app\android\BlinkLink-0.3.2-debug.apk'
+$exe=Join-Path $root 'app\ScrcpyGui.exe';$apk=Join-Path $root 'app\android\BlinkLink-0.4.0-debug.apk'
 if((Get-Item -LiteralPath $exe).VersionInfo.FileVersion -ne "$Version.0"){throw 'Published executable version mismatch'}
-if((Get-FileHash -LiteralPath $apk).Hash.ToLowerInvariant() -ne 'affd1245bc6e150ee0c1ffd2ea18e0eaa0231fac66483002819c0419841cce61'){throw 'APK hash differs from verified 0.3.2 build'}
+if((Get-FileHash -LiteralPath $apk).Hash.ToLowerInvariant() -ne 'd8844b1d527a2305bc523ddfe76c516eb1ebe04871d922ce1cffa188d71ac91e'){throw 'APK hash differs from verified 0.4.0 build'}
 $stage=Join-Path $OutputDirectory ('package-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $stage,(Join-Path $stage 'android')|Out-Null
 Copy-Item -LiteralPath $exe -Destination (Join-Path $stage 'ScrcpyGui.exe')
-Copy-Item -LiteralPath $apk -Destination (Join-Path $stage 'android\BlinkLink-0.3.2-debug.apk')
+Copy-Item -LiteralPath $apk -Destination (Join-Path $stage 'android\BlinkLink-0.4.0-debug.apk')
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $stage 'LICENSE.txt')
 $desktop=Get-Content -LiteralPath (Join-Path $root 'scrcpy-install-guide.html') -Raw
 $desktop.Replace('android/manual.html','android/BlinkLink-guide.html')|Set-Content -LiteralPath (Join-Path $stage 'scrcpy-install-guide.html') -Encoding utf8
 $mobile=Get-Content -LiteralPath (Join-Path $root 'android\manual.html') -Raw
-$mobile.Replace('../app/android/BlinkLink-0.3.2-debug.apk','BlinkLink-0.3.2-debug.apk')|Set-Content -LiteralPath (Join-Path $stage 'android\BlinkLink-guide.html') -Encoding utf8
+$mobile.Replace('../app/android/BlinkLink-0.4.0-debug.apk','BlinkLink-0.4.0-debug.apk')|Set-Content -LiteralPath (Join-Path $stage 'android\BlinkLink-guide.html') -Encoding utf8
 @"
-scrcpy 설정 GUI v$Version / Blink Link Android 0.3.2
+scrcpy 설정 GUI v$Version / Blink Link Android 0.4.0
 
 1. ZIP 전체를 새 폴더에 풉니다.
 2. 공식 scrcpy Windows 배포본을 별도로 준비합니다: https://github.com/Genymobile/scrcpy/releases/latest
@@ -36,8 +36,8 @@ PC 설명서: scrcpy-install-guide.html
 "@|Set-Content -LiteralPath (Join-Path $stage 'README.txt') -Encoding utf8
 $zip=Join-Path $OutputDirectory "ScrcpyGui-v$Version-win-x64.zip"
 Compress-Archive -LiteralPath (Get-ChildItem -LiteralPath $stage|ForEach-Object FullName) -DestinationPath $zip -Force
-foreach($pair in @(@('ScrcpyGui.exe','ScrcpyGui.exe'),@('android\BlinkLink-0.3.2-debug.apk','BlinkLink-0.3.2-debug.apk'),@('scrcpy-install-guide.html','scrcpy-install-guide.html'),@('android\BlinkLink-guide.html','BlinkLink-guide.html'))){Copy-Item -LiteralPath (Join-Path $stage $pair[0]) -Destination (Join-Path $OutputDirectory $pair[1])}
-$names=@('ScrcpyGui.exe',"ScrcpyGui-v$Version-win-x64.zip",'BlinkLink-0.3.2-debug.apk','scrcpy-install-guide.html','BlinkLink-guide.html')
+foreach($pair in @(@('ScrcpyGui.exe','ScrcpyGui.exe'),@('android\BlinkLink-0.4.0-debug.apk','BlinkLink-0.4.0-debug.apk'),@('scrcpy-install-guide.html','scrcpy-install-guide.html'),@('android\BlinkLink-guide.html','BlinkLink-guide.html'))){Copy-Item -LiteralPath (Join-Path $stage $pair[0]) -Destination (Join-Path $OutputDirectory $pair[1])}
+$names=@('ScrcpyGui.exe',"ScrcpyGui-v$Version-win-x64.zip",'BlinkLink-0.4.0-debug.apk','scrcpy-install-guide.html','BlinkLink-guide.html')
 $lines=foreach($name in $names){$hash=(Get-FileHash -LiteralPath (Join-Path $OutputDirectory $name)).Hash.ToLowerInvariant();"$hash  $name"}
 $lines|Set-Content -LiteralPath (Join-Path $OutputDirectory 'SHA256SUMS.txt') -Encoding ascii
 Write-Output "Release package: $OutputDirectory"

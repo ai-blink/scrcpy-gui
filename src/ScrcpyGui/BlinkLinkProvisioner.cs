@@ -12,8 +12,8 @@ internal sealed class BlinkLinkProvisioner(Func<IReadOnlyList<string>, Cancellat
 {
     internal const string Package = "kr.blinklabs.blinklink";
     internal const string Permission = "android.permission.WRITE_SECURE_SETTINGS";
-    internal const string Version = "0.3.2";
-    internal const string ApkSha256 = "affd1245bc6e150ee0c1ffd2ea18e0eaa0231fac66483002819c0419841cce61";
+    internal const string Version = "0.4.0";
+    internal const string ApkSha256 = "d8844b1d527a2305bc523ddfe76c516eb1ebe04871d922ce1cffa188d71ac91e";
 
     internal async Task<BlinkSetupResult> PrepareAsync(string serial, string apk, IProgress<string>? progress, CancellationToken cancellation)
     {
