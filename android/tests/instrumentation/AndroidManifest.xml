@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="kr.blinklabs.blinklink.tests">
+<uses-sdk android:minSdkVersion="30" android:targetSdkVersion="36" />
+<application android:label="Blink Link isolated tests" />
+<instrumentation android:name="kr.blinklabs.blinklink.tests.MacroInstrumentation" android:targetPackage="kr.blinklabs.blinklink" />
+</manifest>

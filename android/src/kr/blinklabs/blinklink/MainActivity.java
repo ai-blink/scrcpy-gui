@@ -105,7 +105,8 @@ public final class MainActivity extends Activity {
             LinkState.setAdb(this,true);say("복구를 요청했어요. Android 허용 창이 나타나면 확인하세요.");update();
         });
         gap(content,12);toggle=button(content,"자동 복구 시작",false,false,this::toggleMonitoring);
-        gap(content,24);text(content,"등록된 Wi-Fi에서만 자동으로 켭니다.",14,false,colors.muted);
+        gap(content,16);button(content,"내 매크로 열기",false,false,()->startActivity(new Intent(this,MacroActivity.class)));
+        gap(content,16);text(content,"등록된 Wi-Fi에서만 자동으로 켭니다.",14,false,colors.muted);
     }
     private TextView detailRow(String label){
         LinearLayout row=vertical();text(row,label,14,false,colors.muted);gap(row,4);TextView value=text(row,"",18,true,colors.ink);content.addView(row);return value;
