@@ -6,6 +6,9 @@ import java.util.*;
 
 /** Versioned local macro definitions. Imported definitions are always disabled. */
 public final class MacroStore {
+    // 100 macros * 16 actions * 1000 UTF-16 units * 6 JSON-escape bytes,
+    // plus names, metadata and pretty-print whitespace, fits below 16 MiB.
+    public static final int MAX_BACKUP_BYTES=16*1024*1024;
     public static final String[] TRIGGERS={"수동 실행","매일 지정 시각","충전 시작","충전 종료","Wi-Fi 연결","화면 켜짐","잠금 해제"};
     public static final String[] ACTIONS={"알림 표시","텍스트 읽기","기다리기 (초)","앱 열기 (패키지 이름)","미디어 음량 (0~100)","진동 (밀리초)","무선 디버깅 복구"};
     public static SharedPreferences prefs(Context c){return c.getSharedPreferences("macros",0);}
@@ -13,7 +16,17 @@ public final class MacroStore {
     public static JSONObject find(Context c,String id){JSONArray a=all(c);for(int i=0;i<a.length();i++)if(a.optJSONObject(i).optString("id").equals(id))return a.optJSONObject(i);return null;}
     public static void save(Context c,JSONObject m)throws JSONException{validate(m);JSONArray a=all(c),out=new JSONArray();boolean found=false;for(int i=0;i<a.length();i++){JSONObject old=a.getJSONObject(i);if(old.getString("id").equals(m.getString("id"))){out.put(m);found=true;}else out.put(old);}if(!found)out.put(m);if(out.length()>100)throw new JSONException("매크로는 최대 100개입니다");write(c,out);}
     public static void remove(Context c,String id)throws JSONException{JSONArray a=all(c),out=new JSONArray();for(int i=0;i<a.length();i++)if(!a.getJSONObject(i).getString("id").equals(id))out.put(a.get(i));write(c,out);}
-    private static void write(Context c,JSONArray a)throws JSONException{if(!prefs(c).edit().putString("definitions",a.toString()).commit())throw new JSONException("저장 실패");}
+    private static void write(Context c,JSONArray a)throws JSONException{
+        // Keep every committed set restorable, including imported extension fields.
+        backup(a);
+        if(!prefs(c).edit().putString("definitions",a.toString()).commit())throw new JSONException("저장 실패");
+    }
+    public static String copyName(String name){
+        String suffix=" 복사";
+        int end=Math.min(name.length(),80-suffix.length());
+        if(end>0&&end<name.length()&&Character.isHighSurrogate(name.charAt(end-1))&&Character.isLowSurrogate(name.charAt(end)))end--;
+        return name.substring(0,end)+suffix;
+    }
     public static JSONObject fresh()throws JSONException{return new JSONObject().put("id",UUID.randomUUID().toString()).put("name","").put("enabled",false).put("trigger",0).put("time","09:00").put("charging",false).put("wifi","").put("actions",new JSONArray());}
     public static void validate(JSONObject m)throws JSONException{
         if(m.getString("id").isEmpty()||m.getString("name").trim().isEmpty()||m.getString("name").length()>80)throw new JSONException("이름은 1~80자로 입력하세요");
@@ -27,9 +40,20 @@ public final class MacroStore {
             if(k==2||k==4||k==5){int n;try{n=Integer.parseInt(v);}catch(NumberFormatException e){throw new JSONException("숫자를 입력하세요");}int max=k==2?30:k==4?100:3000;if(n<0||n>max)throw new JSONException("허용 범위: 0~"+max);if(k==2)waits+=n;}
         }if(waits>120)throw new JSONException("총 대기는 120초 이내입니다");
     }
-    public static String exportData(Context c)throws JSONException{return new JSONObject().put("version",1).put("macros",all(c)).toString(2);}
+    public static void validateBackupSize(String data)throws JSONException{
+        if(data==null||data.length()>MAX_BACKUP_BYTES||data.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>MAX_BACKUP_BYTES)
+            throw new JSONException("백업 파일은 16MiB 이내입니다");
+    }
+    private static String backup(JSONArray a)throws JSONException{
+        if(a.length()>100)throw new JSONException("매크로는 최대 100개입니다");
+        for(int i=0;i<a.length();i++)validate(a.getJSONObject(i));
+        String data=new JSONObject().put("version",1).put("macros",a).toString(2);
+        validateBackupSize(data);
+        return data;
+    }
+    public static String exportData(Context c)throws JSONException{return backup(all(c));}
     public static int importData(Context c,String data)throws JSONException{
-        if(data.length()>262144)throw new JSONException("파일은 256KB 이내입니다");JSONObject root=new JSONObject(data);if(root.getInt("version")!=1)throw new JSONException("지원하지 않는 파일 버전");
+        validateBackupSize(data);JSONObject root=new JSONObject(data);if(root.getInt("version")!=1)throw new JSONException("지원하지 않는 파일 버전");
         JSONArray incoming=root.getJSONArray("macros"),out=all(c);if(out.length()+incoming.length()>100)throw new JSONException("합계 100개를 초과합니다");
         for(int i=0;i<incoming.length();i++){JSONObject m=new JSONObject(incoming.getJSONObject(i).toString());m.put("id",UUID.randomUUID().toString()).put("enabled",false);validate(m);out.put(m);}write(c,out);return incoming.length();
     }

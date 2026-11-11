@@ -16,7 +16,10 @@ public final class MacroService extends Service {
     private final Map<String,Run> active=new HashMap<>();
     private final Map<String,Long> lastAutomatic=new HashMap<>();
     private boolean monitoring,charging;private String wifi="";private int nextNotice=100;
-    private TextToSpeech tts;private int speechState;private final Map<String,Runnable> speechDone=new HashMap<>();
+    private TextToSpeech tts;private int speechState;
+    private final SpeechSessions speech=new SpeechSessions(new SpeechSessions.Scheduler(){public void after(Runnable r,long delay){h.postDelayed(r,delay);}public void cancel(Runnable r){h.removeCallbacks(r);}});
+    private static final class Scheduled {final String day,time;Scheduled(String day,String time){this.day=day;this.time=time;}}
+    private final Map<String,Scheduled> scheduled=new LinkedHashMap<>();
     private final Runnable tick=new Runnable(){public void run(){if(monitoring){poll();h.postDelayed(this,15000);}}};
     public static void send(Context c,String action,String id){Intent i=new Intent(c,MacroService.class).setAction(action);if(id!=null)i.putExtra("id",id);c.startForegroundService(i);}
     private final BroadcastReceiver events=new BroadcastReceiver(){public void onReceive(Context c,Intent i){if(!monitoring)return;String a=i.getAction();if(Intent.ACTION_POWER_CONNECTED.equals(a)||Intent.ACTION_POWER_DISCONNECTED.equals(a))poll();else if(Intent.ACTION_SCREEN_ON.equals(a))fire(5);else if(Intent.ACTION_USER_PRESENT.equals(a))fire(6);}};
@@ -37,19 +40,33 @@ public final class MacroService extends Service {
     private boolean constraints(JSONObject m){return (!m.optBoolean("charging")||isCharging())&&(m.optString("wifi").isEmpty()||m.optString("wifi").equals(LinkState.ssid(this)));}
     private void fire(int trigger){JSONArray list=MacroStore.all(this);String now=new java.text.SimpleDateFormat("HH:mm",Locale.US).format(new Date());String day=new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());
         for(int x=0;x<list.length();x++){JSONObject m=list.optJSONObject(x);if(!m.optBoolean("enabled")||m.optInt("trigger")!=trigger||!constraints(m))continue;
-            if(trigger==1){String key="fired."+m.optString("id");if(!now.equals(m.optString("time"))||day.equals(MacroStore.prefs(this).getString(key,"")))continue;if(!MacroStore.prefs(this).edit().putString(key,day).commit())continue;}
+            if(trigger==1){String key="fired."+m.optString("id");if(!now.equals(m.optString("time"))||day.equals(MacroStore.prefs(this).getString(key,"")))continue;scheduled.putIfAbsent(m.optString("id"),new Scheduled(day,m.optString("time")));continue;}
             execute(m,false);
         }
+        if(trigger==1)drainScheduled();
     }
-    private void execute(JSONObject m,boolean manual){String id=m.optString("id");
-        long now=SystemClock.elapsedRealtime();if(!manual&&now-lastAutomatic.getOrDefault(id,-5000L)<5000)return;if(active.containsKey(id)){MacroStore.log(this,m.optString("name")+" · 기존 실행 중, 중복 생략");return;}if(active.size()>=4){MacroStore.log(this,"동시 실행 4개 초과 · 요청 생략");return;}
-        try{MacroStore.validate(m);}catch(JSONException e){MacroStore.log(this,"정의 오류: "+e.getMessage());return;}
-        if(!constraints(m)){MacroStore.log(this,m.optString("name")+" · 추가 조건 불일치");return;}if(!manual)lastAutomatic.put(id,now);Run r=new Run(m,manual);active.put(id,r);MacroStore.log(this,r.name+" · 시작");r.next();
+    private void drainScheduled(){
+        if(!monitoring)return;
+        String today=new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());
+        for(String id:new ArrayList<>(scheduled.keySet())){
+            Scheduled slot=scheduled.get(id);JSONObject m=MacroStore.find(this,id);
+            if(m==null||!m.optBoolean("enabled")||m.optInt("trigger")!=1||!today.equals(slot.day)||!slot.time.equals(m.optString("time"))||slot.day.equals(MacroStore.prefs(this).getString("fired."+id,""))){scheduled.remove(id);continue;}
+            if(active.size()>=4)break;
+            if(execute(m,false,slot.day))scheduled.remove(id);
+        }
+    }
+    private boolean execute(JSONObject m,boolean manual){return execute(m,manual,null);}
+    private boolean execute(JSONObject m,boolean manual,String scheduleDay){String id=m.optString("id");
+        long now=SystemClock.elapsedRealtime();if(!manual&&now-lastAutomatic.getOrDefault(id,-5000L)<5000)return false;if(active.containsKey(id)){MacroStore.log(this,m.optString("name")+" · 기존 실행 중, 중복 생략");return false;}if(active.size()>=4){MacroStore.log(this,"동시 실행 4개 초과 · 요청 생략");return false;}
+        try{MacroStore.validate(m);}catch(JSONException e){MacroStore.log(this,"정의 오류: "+e.getMessage());return false;}
+        if(!constraints(m)){MacroStore.log(this,m.optString("name")+" · 추가 조건 불일치");return false;}
+        if(scheduleDay!=null&&!MacroStore.prefs(this).edit().putString("fired."+id,scheduleDay).commit())return false;
+        if(!manual)lastAutomatic.put(id,now);Run r=new Run(m,manual);active.put(id,r);MacroStore.log(this,r.name+" · 시작");r.next();return true;
     }
     private final class Run{
-        final JSONObject m;final String id,name;final boolean manual;final long started=SystemClock.elapsedRealtime();int index;boolean finished;
+        final JSONObject m;final String id,name;final boolean manual;final long started=SystemClock.elapsedRealtime();int index;boolean finished;String speechToken;
         Run(JSONObject m,boolean manual){this.m=m;this.manual=manual;id=m.optString("id");name=m.optString("name");}
-        void finish(String state){if(finished)return;finished=true;active.remove(id);MacroStore.log(MacroService.this,name+" · "+state);idle();}
+        void finish(String state){if(finished)return;finished=true;speech.cancel(speechToken);active.remove(id);if(monitoring)h.post(()->drainScheduled());MacroStore.log(MacroService.this,name+" · "+state);idle();}
         void next(){if(finished)return;JSONObject current=MacroStore.find(MacroService.this,id);if(current==null||(!manual&&!current.optBoolean("enabled"))){finish("취소됨");return;}if(SystemClock.elapsedRealtime()-started>180000){finish("시간 제한 종료");return;}
             JSONArray a=m.optJSONArray("actions");if(index>=a.length()){finish("완료");return;}JSONObject step=a.optJSONObject(index++);int kind=step.optInt("type");String value=step.optString("value");
             try{switch(kind){
@@ -64,13 +81,22 @@ public final class MacroService extends Service {
             }h.post(this::next);}catch(RuntimeException e){finish("실패: "+e.getMessage());}
         }
     }
-    private void notice(String title,String text,Intent target){if(!getSystemService(NotificationManager.class).areNotificationsEnabled())throw new IllegalStateException("알림 권한이 꺼져 있습니다");int id=nextNotice++;Notification.Builder b=new Notification.Builder(this,"macros").setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle(title).setContentText(text).setStyle(new Notification.BigTextStyle().bigText(text)).setAutoCancel(true);if(target!=null)b.setContentIntent(PendingIntent.getActivity(this,id,target,PendingIntent.FLAG_IMMUTABLE));getSystemService(NotificationManager.class).notify(id,b.build());}
+    private void notice(String title,String text,Intent target){NotificationManager manager=getSystemService(NotificationManager.class);NotificationChannel channel=manager.getNotificationChannel("macros");if(!manager.areNotificationsEnabled()||channel==null||channel.getImportance()==NotificationManager.IMPORTANCE_NONE)throw new IllegalStateException("매크로 실행 알림 권한 또는 알림 채널이 꺼져 있습니다");int id=nextNotice++;Notification.Builder b=new Notification.Builder(this,"macros").setSmallIcon(android.R.drawable.ic_menu_info_details).setContentTitle(title).setContentText(text).setStyle(new Notification.BigTextStyle().bigText(text)).setAutoCancel(true);if(target!=null)b.setContentIntent(PendingIntent.getActivity(this,id,target,PendingIntent.FLAG_IMMUTABLE));getSystemService(NotificationManager.class).notify(id,b.build());}
     private void speak(String value,Runnable done,Run run){
-        if(tts==null){speechState=0;tts=new TextToSpeech(this,status->{speechState=status==TextToSpeech.SUCCESS?1:-1;});tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){public void onStart(String id){}public void onDone(String id){h.post(()->completeSpeech(id));}public void onError(String id){h.post(()->{speechDone.remove(id);Run r=active.get(id.split(":")[0]);if(r!=null)r.finish("음성 읽기 실패");});}});}
-        long deadline=SystemClock.elapsedRealtime()+8000;Runnable ready=new Runnable(){public void run(){if(run.finished)return;if(speechState==0&&SystemClock.elapsedRealtime()<deadline){h.postDelayed(this,100);return;}if(speechState!=1){run.finish("음성 엔진 준비 실패");return;}String token=run.id+":"+run.index;speechDone.put(token,done);if(tts.speak(value,TextToSpeech.QUEUE_ADD,null,token)==TextToSpeech.ERROR){speechDone.remove(token);run.finish("음성 읽기 요청 실패");return;}h.postDelayed(()->{if(speechDone.remove(token)!=null)run.finish("음성 읽기 시간 초과");},60000);}};h.post(ready);
+        if(tts==null){
+            speechState=0;tts=new TextToSpeech(this,status->{speechState=status==TextToSpeech.SUCCESS?1:-1;});
+            tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){public void onStart(String id){}public void onDone(String id){h.post(()->speech.done(id));}public void onError(String id){h.post(()->speech.fail(id,"음성 읽기 실패"));}});
+        }
+        long deadline=SystemClock.elapsedRealtime()+8000;
+        h.post(new Runnable(){public void run(){
+            if(run.finished)return;
+            if(speechState==0&&SystemClock.elapsedRealtime()<deadline){h.postDelayed(this,100);return;}
+            if(speechState!=1){run.finish("음성 엔진 준비 실패");return;}
+            run.speechToken=speech.begin(()->{run.speechToken=null;if(!run.finished)done.run();},reason->run.finish(reason));
+            if(tts.speak(value,TextToSpeech.QUEUE_ADD,null,run.speechToken)==TextToSpeech.ERROR)speech.fail(run.speechToken,"음성 읽기 요청 실패");
+        }});
     }
-    private void completeSpeech(String id){Runnable r=speechDone.remove(id);if(r!=null)r.run();}
     private void idle(){if(!monitoring&&active.isEmpty())stopSelf();}
-    @Override public void onDestroy(){running=false;monitoring=false;h.removeCallbacksAndMessages(null);for(Run r:new ArrayList<>(active.values()))r.finish("중지됨");speechDone.clear();if(tts!=null)tts.shutdown();unregisterReceiver(events);MacroStore.log(this,"매크로 감시·실행 중지");super.onDestroy();}
+    @Override public void onDestroy(){running=false;monitoring=false;h.removeCallbacksAndMessages(null);for(Run r:new ArrayList<>(active.values()))r.finish("중지됨");speech.clear();scheduled.clear();if(tts!=null)tts.shutdown();unregisterReceiver(events);MacroStore.log(this,"매크로 감시·실행 중지");super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 }

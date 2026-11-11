@@ -15,14 +15,14 @@ old_pid=adb('shell','pidof',PKG)
 # Block the old service while forcing the flag OFF before the actual update.
 adb('shell','cmd','location','set-location-enabled','false');time.sleep(2)
 adb('shell','settings','put','global','adb_wifi_enabled','0');assert_off_for(3)
-apk=ROOT/'app'/'android'/'BlinkLink-0.3.0-debug.apk'
+apk=ROOT/'app'/'android'/'BlinkLink-0.3.1-debug.apk'
 assert 'Success' in adb('install','-r',str(apk))
 deadline=time.monotonic()+30
 while time.monotonic()<deadline and not foreground():time.sleep(1)
 assert foreground(), 'Replacement must start service before opening the activity'
 new_pid=adb('shell','pidof',PKG)
 assert old_pid and new_pid and old_pid!=new_pid
-assert 'versionName=0.3.0' in adb('shell','dumpsys','package',PKG)
+assert 'versionName=0.3.1' in adb('shell','dumpsys','package',PKG)
 (P/'after-update-services.txt').write_text(adb('shell','dumpsys','activity','services',PKG))
 adb('shell','cmd','location','set-location-enabled','true');seconds=wait_on()
 record('actual APK replacement, new process and OFF-to-ON recovery',old_pid=old_pid,new_pid=new_pid,seconds=seconds)

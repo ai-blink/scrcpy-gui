@@ -11,7 +11,8 @@ function Run([string]$exe,[string[]]$arguments){ & $exe @arguments; if($LASTEXIT
 $app=Join-Path $b 'app';New-Item -ItemType Directory $app | Out-Null
 $sources=@(Get-ChildItem "$root\android\src" -Recurse -Filter '*.java' | ForEach-Object FullName)
 Run "$jdk\bin\javac.exe" (@('-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-cp',$platform,'-d',$app)+$sources)
-Run "$jdk\bin\javac.exe" @('-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-cp',"$platform;$app",'-d',"$b\classes","$PSScriptRoot\instrumentation\MacroInstrumentation.java")
+$testSources=@(Get-ChildItem "$PSScriptRoot\instrumentation" -Filter '*.java' | ForEach-Object FullName)
+Run "$jdk\bin\javac.exe" (@('-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-cp',"$platform;$app",'-d',"$b\classes")+$testSources)
 Run "$bt\aapt2.exe" @('link','-I',$platform,'--manifest',"$PSScriptRoot\instrumentation\AndroidManifest.xml",'-o',"$b\base.apk")
 $classes=@(Get-ChildItem "$b\classes" -Recurse -Filter '*.class' | ForEach-Object FullName)
 Run "$jdk\bin\java.exe" (@('-cp',"$bt\lib\d8.jar",'com.android.tools.r8.D8','--lib',$platform,'--classpath',$app,'--min-api','30','--output',"$b\dex")+$classes)

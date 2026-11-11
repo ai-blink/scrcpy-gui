@@ -18,9 +18,10 @@ function Invoke-Checked([string]$Exe, [string[]]$Arguments) {
 $sources = @(Get-ChildItem -LiteralPath "$PSScriptRoot\src" -Recurse -Filter '*.java' | ForEach-Object FullName)
 Invoke-Checked "$JavaHome\bin\javac.exe" (@('-encoding','UTF-8','-source','8','-target','8','-Xlint:-options','-classpath',$platform,'-d',"$build\classes") + $sources)
 $testSources = @(Get-ChildItem -LiteralPath "$PSScriptRoot\tests" -Filter '*Test.java' | ForEach-Object FullName)
-Invoke-Checked "$JavaHome\bin\javac.exe" (@('-encoding','UTF-8','-d',"$build\tests","$PSScriptRoot\src\kr\blinklabs\blinklink\RecoveryPolicy.java","$PSScriptRoot\src\kr\blinklabs\blinklink\RetryBudget.java") + $testSources)
+Invoke-Checked "$JavaHome\bin\javac.exe" (@('-encoding','UTF-8','-d',"$build\tests","$PSScriptRoot\src\kr\blinklabs\blinklink\RecoveryPolicy.java","$PSScriptRoot\src\kr\blinklabs\blinklink\RetryBudget.java","$PSScriptRoot\src\kr\blinklabs\blinklink\SpeechSessions.java") + $testSources)
 Invoke-Checked "$JavaHome\bin\java.exe" @('-cp',"$build\tests",'RecoveryPolicyTest')
 Invoke-Checked "$JavaHome\bin\java.exe" @('-cp',"$build\tests",'RetryBudgetTest')
+Invoke-Checked "$JavaHome\bin\java.exe" @('-cp',"$build\tests",'SpeechSessionsTest')
 Invoke-Checked "$bt\aapt2.exe" @('link','-I',$platform,'--manifest',"$PSScriptRoot\AndroidManifest.xml",'-o',"$build\base.apk")
 $classes = @(Get-ChildItem -LiteralPath "$build\classes" -Recurse -Filter '*.class' | ForEach-Object FullName)
 # Call D8 through Java to avoid cmd.exe argument limits and shell quoting.
@@ -32,7 +33,7 @@ New-Item -ItemType Directory -Force (Split-Path -Parent $key) | Out-Null
 if (!(Test-Path -LiteralPath $key)) {
     Invoke-Checked "$JavaHome\bin\keytool.exe" @('-genkeypair','-keystore',$key,'-storepass','android','-keypass','android','-alias','androiddebugkey','-dname','CN=Android Debug,O=Android,C=US','-keyalg','RSA','-keysize','2048','-validity','10000')
 }
-$apk = Join-Path $out 'BlinkLink-0.3.0-debug.apk'
+$apk = Join-Path $out 'BlinkLink-0.3.1-debug.apk'
 Invoke-Checked "$JavaHome\bin\java.exe" @('-jar',"$bt\lib\apksigner.jar",'sign','--ks',$key,'--ks-key-alias','androiddebugkey','--ks-pass','pass:android','--key-pass','pass:android','--out',$apk,"$build\aligned.apk")
 Invoke-Checked "$JavaHome\bin\java.exe" @('-jar',"$bt\lib\apksigner.jar",'verify','--verbose',$apk)
 Get-FileHash -LiteralPath $apk -Algorithm SHA256
