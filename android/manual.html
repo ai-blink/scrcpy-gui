@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Blink Link 0.3.1 사용 설명서</title>
+<style>
+:root{--bg:#f5f7fa;--paper:#fff;--ink:#16283a;--muted:#526272;--accent:#173d5b;--soft:#e2ebf3;--border:#798796;--focus:#855215;--radius:12px;color-scheme:light dark}
+*{box-sizing:border-box}html{scroll-padding-top:24px}body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.8 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif;word-break:keep-all;overflow-wrap:anywhere}a{color:var(--accent);text-underline-offset:5px}a:hover{text-decoration-thickness:2px}::selection{background:var(--accent);color:var(--paper)}:focus-visible{outline:3px solid var(--focus);outline-offset:4px}button,a.action{font:inherit;min-height:48px;border:1px solid var(--border);border-radius:var(--radius);padding:10px 18px;background:var(--paper);color:var(--accent);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;line-height:1.5}button:hover,a.action:hover{background:var(--soft)}a.primary{background:var(--accent);color:var(--paper);border-color:var(--accent)}a.primary:hover{background:var(--ink)}button:disabled{cursor:wait;opacity:.65}.skip{position:absolute;top:-100px;left:16px;background:var(--paper);padding:12px;z-index:2}.skip:focus{top:12px}.wrap{max-width:1160px;margin:auto;padding:40px 28px 70px}header{padding:16px 0 36px;border-bottom:1px solid var(--border)}h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.25;letter-spacing:-.025em;margin:0 0 20px}h2{font-size:1.8rem;line-height:1.4;margin:0 0 20px}h3{font-size:1.2rem;line-height:1.5;margin:30px 0 12px}p{margin:0 0 16px;max-width:72ch}.lead{font-size:1.25rem;max-width:55ch}.muted,small{color:var(--muted)}.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}.layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:50px;margin-top:36px}nav{position:sticky;top:24px;align-self:start}nav strong{display:block;margin:0 0 8px}nav a{display:block;min-height:48px;padding:8px 0}main{min-width:0}section{margin-bottom:52px;padding-bottom:40px;border-bottom:1px solid var(--border)}section:last-child{border-bottom:0;margin-bottom:0}ol,ul{padding-left:25px;margin:12px 0 20px}li{padding-left:5px;margin:10px 0}li p{margin:8px 0}.note{padding:20px 24px;background:var(--soft);border-radius:var(--radius);margin:22px 0}.note p:last-child{margin-bottom:0}.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);margin:20px 0}table{width:100%;border-collapse:collapse;text-align:left;min-width:460px}th,td{vertical-align:top;padding:14px 16px;border-bottom:1px solid var(--border)}th{background:var(--soft);font-weight:650}tr:last-child td{border-bottom:0}td:first-child{min-width:120px;font-weight:600}.flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:20px 0}.flow span{background:var(--soft);border-radius:8px;padding:10px 16px}.flow b{color:var(--muted)}pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all;background:var(--soft);padding:18px;border-radius:var(--radius);line-height:1.7;font-size:.9rem;margin:12px 0}code{font-family:Consolas,"SFMono-Regular",monospace}p code,li code,td code{background:var(--soft);padding:2px 5px;border-radius:4px;font-size:.9em}.copy{font-size:.95rem;margin-bottom:12px}.status{min-height:1.6em;color:var(--muted);font-size:.95rem}details{border-bottom:1px solid var(--border);padding:8px 0}summary{padding:12px 4px;min-height:48px;cursor:pointer;font-weight:650}details>div{padding:8px 4px 16px}footer{border-top:1px solid var(--border);padding-top:24px;color:var(--muted);font-size:.95rem}.example{margin:24px 0;padding:0 0 22px;border-bottom:1px solid var(--border)}.example:last-child{border:0;padding-bottom:0}.example h3{margin-top:0}.hash{font-size:.85rem;word-break:break-all}
+@media(prefers-color-scheme:dark){:root{--bg:#111820;--paper:#18232e;--ink:#e4ecf4;--muted:#afbecc;--accent:#b7d3f0;--soft:#21384b;--border:#718294;--focus:#ebc38b}a.primary{color:#133149}a.primary:hover{background:#d1e3f7}}
+@media(max-width:760px){.wrap{padding:24px 20px 44px}.layout{display:block;margin-top:24px}nav{position:static;padding-bottom:24px;margin-bottom:32px;border-bottom:1px solid var(--border)}nav a{display:inline-flex;padding:9px 12px;margin:4px 5px 4px 0;border:1px solid var(--border);border-radius:8px}h2{font-size:1.55rem}.note{padding:16px}.actions>*{flex:1 1 190px}th,td{padding:12px}.flow{gap:8px}.flow span{padding:8px 12px}}
+@media print{:root{--bg:#fff;--paper:#fff;--ink:#000;--muted:#333;--accent:#000;--soft:#f0f0f0;--border:#999}body{font-size:11pt;line-height:1.6}.wrap{max-width:none;padding:0}header{padding:0 0 18px}.layout{display:block;margin-top:24px}nav,.actions,.copy,.status,.skip,.no-print{display:none}section{margin-bottom:24px;padding-bottom:20px}h1{font-size:27pt}h2{font-size:19pt}h3{font-size:14pt}h2,h3,summary{break-after:avoid}tr,pre,.note{break-inside:avoid}details>div{display:block!important}table{min-width:0}.table-wrap{overflow:visible}a{color:#000}footer{font-size:9pt}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 바로 가기</a>
+<div class="wrap">
+<header>
+<h1>Blink Link 사용 설명서</h1>
+<p class="lead">휴대폰의 무선 연결을 복구하고,<br>원하는 조건에 맞춰 매크로를 실행하세요.</p>
+<p class="muted">버전 0.3.1 · 한국어 안내 · 2026년 11월 11일</p>
+<div class="actions"><a class="action primary" href="../app/android/BlinkLink-0.3.1-debug.apk" download>0.3.1 APK 받기</a><a class="action" href="#setup">처음 설정하기</a><button type="button" id="print" class="no-print">인쇄 · PDF로 저장</button></div>
+</header>
+<div class="layout">
+<nav aria-label="설명서 목차"><strong>필요한 내용으로 이동</strong><a href="#start">먼저 알아두기</a><a href="#setup">설치와 최초 설정</a><a href="#connection">연결 복구 사용</a><a href="#macros">매크로 만들기</a><a href="#examples">따라 만들기</a><a href="#backup">백업과 복원</a><a href="#help">문제 해결</a><a href="#limits">지원 범위</a></nav>
+<main id="main">
+<section id="start"><h2>먼저 알아두기</h2>
+<p>Blink Link에는 두 가지 감시 기능이 있습니다. <strong>무선 연결 복구</strong>와 <strong>직접 만든 매크로의 조건 감시</strong>는 각각 시작하고 멈춥니다.</p>
+<div class="table-wrap" tabindex="0" role="region" aria-label="두 감시 기능 비교"><table><thead><tr><th scope="col">기능</th><th scope="col">하는 일</th><th scope="col">시작 위치</th></tr></thead><tbody><tr><td>무선 연결 복구</td><td>등록한 Wi-Fi에서 꺼진 무선 디버깅을 다시 켭니다.</td><td>연결 → 자동 복구 시작</td></tr><tr><td>매크로 조건 감시</td><td>시간·충전·Wi-Fi·화면 상태에 따라 사용자가 만든 동작을 실행합니다.</td><td>내 매크로 열기 → 조건 감시 시작</td></tr></tbody></table></div>
+<div class="note"><p><strong>‘무선 디버깅 켜짐’은 PC 화면 연결 성공과 다릅니다.</strong><br>휴대폰에서 준비가 끝나면 PC의 scrcpy-gui에서 기기를 찾아 연결하세요.</p></div>
+<p>이 설명서는 S23 Ultra / One UI 8.5 / Android 16 사용을 목표로 작성했습니다. 현재 검증은 Android 16 가상 기기에서 수행했으며, 삼성 실물 기기의 설치·절전·네트워크 신뢰 유지와 실제 PC 연결은 별도 확인이 필요합니다.</p>
+</section>
+<section id="setup"><h2>설치와 최초 설정</h2>
+<ol>
+<li><strong>휴대폰과 PC를 한 번 페어링합니다.</strong><p>휴대폰 개발자 옵션 → 무선 디버깅 → <strong>페어링 코드로 기기 페어링</strong>을 열고, PC의 scrcpy-gui에서 페어링하세요. 두 기기는 통신할 수 있는 Wi-Fi에 연결돼 있어야 합니다.</p></li>
+<li><strong>APK를 설치합니다.</strong><p>위의 APK 링크에서 파일을 받으세요. 휴대폰에서 직접 열거나 PC의 ADB로 설치할 수 있습니다. 기존 Blink Link 사용자는 같은 개발 서명 키의 0.3.1을 덮어 설치할 수 있습니다.</p></li>
+<li><strong>PC에서 최초 권한을 한 번 부여합니다.</strong><p>연결된 기기의 ADB 주소를 확인하고 아래 명령의 <code>&lt;기기주소:포트&gt;</code>를 바꿔 실행합니다. 페어링용 포트와 실제 연결용 포트는 다를 수 있습니다.</p>
+<pre id="grant"><code>adb -s &lt;기기주소:포트&gt; shell pm grant kr.blinklabs.blinklink android.permission.WRITE_SECURE_SETTINGS</code></pre><button class="copy" type="button" data-copy="grant">권한 명령 복사</button>
+<p>개발용 프로젝트 폴더에서 설치와 권한 부여를 함께 하려면 다음 PowerShell 명령을 사용합니다.</p><pre id="install"><code>.\android\install.ps1 -Serial '&lt;기기주소:포트&gt;' -GrantPermission</code></pre><button class="copy" type="button" data-copy="install">설치 명령 복사</button><p class="muted">두 명령 모두 주소를 실제 값으로 바꾼 뒤 실행해야 합니다. HTML 설명서에서 자동으로 실행되지는 않습니다.</p></li>
+<li><strong>앱에서 Wi-Fi 확인 권한을 준비합니다.</strong><p>Blink Link → <strong>설정 → 권한 설정 방법</strong>을 펼치세요. 정확한 위치·알림 권한을 허용하고, 앱의 위치 권한을 <strong>항상 허용</strong>으로 설정합니다. Android의 위치 설정도 켭니다. Wi-Fi 이름을 확인하기 위한 조건이며 앱은 위치 좌표를 저장하거나 전송하지 않습니다.</p></li>
+<li><strong>사용할 Wi-Fi를 등록합니다.</strong><p>설정에서 <strong>현재 Wi-Fi 등록</strong>을 누르고 이름을 확인하세요. 본인이 관리하는 네트워크를 등록합니다. 현재 한 개의 Wi-Fi 이름을 저장하며 새로 등록하면 기존 이름을 바꿉니다.</p></li>
+<li><strong>자동 복구를 시작하고 PC에서 연결합니다.</strong><p>연결 화면에서 <strong>자동 복구 시작 → 시작</strong>을 누릅니다. Android의 허용 창이 나오면 네트워크를 확인하세요. 사용할 수 있는 경우 <strong>이 네트워크에서 항상 허용</strong>을 선택합니다. 이후 PC scrcpy-gui에서 실제 화면 연결을 확인합니다.</p></li>
+</ol>
+<p>감시가 자주 중단되면 앱의 <strong>설정 → 앱 권한 · 배터리 설정</strong>에서 삼성 배터리 설정의 ‘제한 없음’을 확인할 수 있습니다. 제조사의 절전 동작까지 완전히 방지하는 것은 아닙니다.</p>
+<p class="status" id="copy-status" role="status" aria-live="polite"></p>
+</section>
+<section id="connection"><h2>연결 복구 사용</h2>
+<div class="table-wrap" tabindex="0" role="region" aria-label="연결 화면 버튼 설명"><table><thead><tr><th scope="col">버튼 / 화면</th><th scope="col">사용할 때</th></tr></thead><tbody>
+<tr><td>지금 한 번 복구</td><td>등록 Wi-Fi에서 디버깅 켜기를 직접 요청합니다. 자동 감시를 시작하는 버튼은 아닙니다. 화면에서 Wi-Fi를 확인할 수 있고 PC 권한이 있으면 백그라운드 위치 권한 없이도 사용할 수 있습니다.</td></tr>
+<tr><td>자동 복구 시작</td><td>등록 Wi-Fi에서 무선 디버깅 꺼짐을 감시합니다.</td></tr>
+<tr><td>자동 복구 일시정지</td><td>감시만 멈춥니다. 현재 무선 디버깅 상태는 유지합니다.</td></tr>
+<tr><td>감시 다시 시작</td><td>Android에서 중지된 감시를 사용자가 다시 시작합니다.</td></tr>
+<tr><td>설정</td><td>위치 권한·Wi-Fi 등록·PC 권한의 준비 상태와 설명을 확인합니다.</td></tr>
+<tr><td>기록</td><td>기본 연결 복구의 최근 기록을 읽고 복사합니다.</td></tr>
+<tr><td>디버깅 끄고 복구 정지</td><td>설정 화면 아래에 있습니다. 확인 후 기본 자동 복구와 무선 디버깅을 끄도록 요청합니다. 연결 중인 PC 화면이 끊길 수 있습니다.</td></tr>
+</tbody></table></div>
+<p>기본 연결 복구는 약 30초 점검과 설정·네트워크 콜백을 사용합니다. 재부팅 후 첫 잠금 해제와 앱 업데이트 이후에도 사용자가 시작한 감시를 재개할 수 있습니다. 강제 중지한 경우에는 앱을 열고 직접 다시 시작하세요.</p>
+<p>자동 켜기 요청은 <strong>최근 5분에 최대 3회</strong>, 요청 사이 최소 5초로 제한됩니다. 요청 실패도 횟수에 포함됩니다. 대기 중에는 연결 화면의 ‘지금 한 번 복구’를 사용할 수 있습니다. 매크로의 디버깅 복구 동작은 기존 요청 예산을 사용합니다.</p>
+</section>
+<section id="macros"><h2>매크로 만들기</h2>
+<div class="flow" aria-label="매크로 실행 흐름"><span>언제 실행할까요?</span><b aria-hidden="true">→</b><span>추가 조건 확인</span><b aria-hidden="true">→</b><span>동작을 순서대로 실행</span></div>
+<ol><li>연결 화면에서 <strong>내 매크로 열기 → 새 매크로 만들기</strong>를 누릅니다.</li><li>알아보기 쉬운 이름을 입력하고 실행 조건을 선택합니다.</li><li>필요하면 ‘충전 중에만’ 또는 Wi-Fi 이름을 추가합니다. 두 조건을 지정하면 <strong>둘 다 맞아야</strong> 합니다.</li><li><strong>동작 추가</strong>에서 종류와 값을 입력하고 <strong>추가 / 적용</strong>을 누릅니다.</li><li>여러 동작은 위에서 아래 순서로 실행됩니다. ‘위로 / 아래로 / 삭제’로 정리합니다.</li><li><strong>매크로 저장</strong>을 누릅니다. 저장 버튼이 보이지 않으면 본문을 아래로 스크롤하세요.</li></ol>
+<h3>자동으로 실행하려면 두 가지를 켜세요</h3>
+<p>개별 매크로의 <strong>자동 실행 허용</strong>을 켠 뒤, 목록 위에서 <strong>조건 감시 시작</strong>을 누릅니다. 매크로 목록의 <strong>실행</strong> 버튼은 개별 자동 허용이 꺼져 있어도 수동 실행하지만, 추가 조건은 그대로 확인합니다.</p>
+<h3>고를 수 있는 실행 조건</h3>
+<div class="table-wrap" tabindex="0" role="region" aria-label="매크로 실행 조건"><table><thead><tr><th scope="col">실행 조건</th><th scope="col">의미</th></tr></thead><tbody>
+<tr><td>수동 실행</td><td>목록의 실행 버튼으로 사용합니다.</td></tr><tr><td>매일 지정 시각</td><td><code>09:00</code>처럼 24시간제 HH:mm을 입력합니다. 하루 한 번 실행하며, 실행이 몰리면 순서대로 기다립니다.</td></tr><tr><td>충전 시작 / 종료</td><td>감시 중 충전 연결 상태가 바뀔 때 실행합니다.</td></tr><tr><td>Wi-Fi 연결</td><td>감시 중 Wi-Fi 연결과 확인된 이름이 바뀔 때 실행합니다. 특정 Wi-Fi에서만 쓰려면 추가 조건에 이름을 입력하세요.</td></tr><tr><td>화면 켜짐</td><td>감시 중 화면이 켜지는 이벤트에 실행합니다.</td></tr><tr><td>잠금 해제</td><td>사용자가 잠금을 해제했을 때 실행합니다. 잠금 자체를 자동으로 풀지는 않습니다.</td></tr>
+</tbody></table></div>
+<h3>동작 값 입력법</h3>
+<div class="table-wrap" tabindex="0" role="region" aria-label="매크로 동작 입력 값"><table><thead><tr><th scope="col">동작</th><th scope="col">입력할 값</th><th scope="col">알아둘 점</th></tr></thead><tbody>
+<tr><td>알림 표시</td><td>알림에 표시할 문장</td><td>앱 알림과 ‘매크로 실행’ 알림 채널을 허용하세요.</td></tr><tr><td>텍스트 읽기</td><td>읽어줄 문장</td><td>휴대폰의 기본 TTS 엔진·언어와 미디어 음량을 사용합니다.</td></tr><tr><td>기다리기 (초)</td><td><code>0</code>~<code>30</code></td><td>전체 동작의 대기 합계는 최대 120초입니다.</td></tr><tr><td>앱 열기</td><td>패키지 이름. 예: <code>com.android.settings</code></td><td><strong>실행 알림을 눌러야</strong> 앱이 열립니다. 일반 앱 이름을 입력하는 칸은 아닙니다.</td></tr><tr><td>미디어 음량</td><td><code>0</code>~<code>100</code></td><td>미디어 음량 비율입니다. 벨소리 음량과 다릅니다.</td></tr><tr><td>진동</td><td><code>0</code>~<code>3000</code></td><td>단위는 밀리초입니다. <code>500</code>은 0.5초이며 진동 장치가 필요합니다.</td></tr><tr><td>무선 디버깅 복구</td><td>비워 둡니다.</td><td>PC 권한과 등록 Wi-Fi 연결이 필요합니다. PC 연결 성공을 확인하는 동작은 아닙니다.</td></tr>
+</tbody></table></div>
+<div class="note"><p><strong>한 동작이 실패하면 남은 순서를 멈춥니다.</strong><br>이미 바뀐 음량 같은 값은 자동으로 원래대로 돌아가지 않습니다. 앱 열기 동작은 알림을 전달한 뒤 다음 동작으로 진행하며, 사용자가 앱을 여는 것을 기다리지 않습니다.</p></div>
+<h3>멈추기와 기록 보기</h3>
+<p>매크로 목록의 <strong>조건 감시 중지</strong> 또는 감시 알림의 <strong>전체 중지</strong>로 감시와 진행 중인 매크로를 멈출 수 있습니다. 기본 무선 연결 복구는 별도로 일시정지합니다. <strong>매크로 실행 기록</strong>에서 시작·완료·실패·추가 조건 불일치 등의 결과를 확인하세요.</p>
+<p>동작 설정 창에서 작성하던 종류와 값은 화면 회전이나 테마 전환 후 복원됩니다. 목록으로 나갈 때는 <strong>매크로 저장</strong>을 눌러야 변경이 저장됩니다.</p>
+</section>
+<section id="examples"><h2>따라 만들기</h2><p>아래는 직접 입력할 수 있는 예시입니다. 앱에 자동으로 설치되는 템플릿은 아닙니다.</p>
+<article class="example"><h3>충전이 시작되면 알려주기</h3><p><strong>실행 조건:</strong> 충전 시작<br><strong>추가 조건:</strong> 없음<br><strong>첫 동작:</strong> 알림 표시 → <code>충전이 시작됐어요.</code></p><p>저장하고 개별 자동 실행 허용과 조건 감시를 켭니다. 이미 충전 중일 때 감시를 시작했다면 새로운 충전 시작 이벤트가 아닙니다. 케이블을 다시 연결해 확인하세요.</p></article>
+<article class="example"><h3>매일 오전에 음성 안내하기</h3><p><strong>실행 조건:</strong> 매일 지정 시각 → <code>09:00</code><br><strong>첫 동작:</strong> 미디어 음량 → <code>40</code><br><strong>두 번째 동작:</strong> 텍스트 읽기 → <code>오늘 일정을 확인할 시간입니다.</code></p><p>음량을 바꾸고 싶지 않으면 첫 동작을 빼세요. TTS 언어와 소리가 준비돼 있는지 목록의 실행 버튼으로 먼저 확인합니다. 종료 후 음량은 자동 복원되지 않습니다.</p></article>
+<article class="example"><h3>한 번 눌러 연결 준비하기</h3><p><strong>실행 조건:</strong> 수동 실행<br><strong>추가 조건:</strong> 사용할 Wi-Fi 이름<br><strong>첫 동작:</strong> 무선 디버깅 복구 → 값 없음<br><strong>두 번째 동작:</strong> 알림 표시 → <code>PC의 scrcpy에서 연결을 확인하세요.</code></p><p>Wi-Fi 이름은 정확하게 입력합니다. 기본 연결 설정에서 같은 Wi-Fi를 등록하고 PC 권한을 준비해야 합니다. 마지막 알림은 연결 성공 판정이 아니라 사용자가 확인할 안내입니다.</p></article>
+</section>
+<section id="backup"><h2>백업과 복원</h2>
+<ol><li>매크로 목록 아래의 <strong>매크로 내보내기</strong>를 누르고 Android 파일 선택기에서 저장 위치를 고릅니다.</li><li>복원할 때 <strong>매크로 가져오기</strong>에서 Blink Link JSON 파일을 선택합니다.</li><li>확인 후 현재 목록에 추가됩니다. 기존 항목을 덮어쓰지 않습니다.</li><li>가져온 매크로는 <strong>모두 자동 실행이 꺼진 상태</strong>입니다. 내용과 조건을 확인하고 필요한 항목만 켭니다.</li></ol>
+<p>파일은 UTF-8 기준 최대 <strong>16MiB</strong>, 매크로는 기존 목록과 합쳐 최대 <strong>100개</strong>입니다. 지원하지 않는 버전이나 잘못된 값이 있으면 파일의 항목 전체를 추가하지 않습니다. 복제한 매크로도 꺼진 상태로 생성됩니다.</p>
+<p>이 파일은 Blink Link 매크로 정의용입니다. <strong>MacroDroid 내보내기 파일과 호환되지 않습니다.</strong> 기본 연결 복구의 Wi-Fi 등록·Android 권한·PC 페어링·실행 기록을 함께 복원하는 전체 앱 백업도 아닙니다.</p>
+</section>
+<section id="help"><h2>문제 해결</h2>
+<details><summary>Wi-Fi 이름을 확인할 수 없어요</summary><div><p>휴대폰 Wi-Fi 연결, 정확한 위치 권한, ‘항상 허용’, Android 위치 켜짐을 확인하세요. 앱의 설정 화면에서 권한 안내를 펼칠 수 있습니다. Wi-Fi 이름을 확인할 수 없으면 자동 연결 복구나 이름 조건이 맞지 않을 수 있습니다.</p></div></details>
+<details><summary>자동 복구를 켰는데 PC 화면이 연결되지 않아요</summary><div><p>앱은 무선 디버깅을 켜도록 요청합니다. Android 허용 창과 잠금 해제 여부를 확인하고, PC scrcpy-gui에서 기기를 다시 찾으세요. 주소·포트가 바뀌거나 페어링이 유지되지 않는 상황은 PC 쪽에서도 확인해야 합니다.</p></div></details>
+<details><summary>매크로가 자동으로 실행되지 않아요</summary><div><p>개별 ‘자동 실행 허용’과 전체 ‘조건 감시 시작’을 모두 확인하세요. 충전·Wi-Fi 추가 조건은 모두 맞아야 합니다. 감시를 시작할 때 이미 연결된 Wi-Fi·충전 상태는 새 이벤트로 처리하지 않습니다. 실행 기록에서 조건 불일치나 실패를 확인하세요.</p></div></details>
+<details><summary>수동 실행도 안 되거나 중간에 멈춰요</summary><div><p>수동 실행도 추가 조건을 확인합니다. 매크로 실행 기록을 열고 실패한 이유를 확인하세요. 알림 권한·알림 채널, TTS 엔진, 앱 패키지 이름, 진동 장치, 디버깅 권한 등을 점검합니다. 실패 뒤의 동작은 실행하지 않습니다.</p></div></details>
+<details><summary>‘앱 열기’가 알림만 보여요</summary><div><p>정상 동작입니다. Android의 백그라운드 화면 실행 제한에 맞춰 알림을 제공합니다. 알림을 직접 눌러 앱을 여세요. 실행할 앱이 설치돼 있고 올바른 패키지 이름인지도 확인하세요.</p></div></details>
+<details><summary>소리가 안 들려요</summary><div><p>휴대폰 기본 텍스트 음성 변환 엔진과 한국어 음성 데이터, 미디어 음량, 블루투스 등 현재 소리 출력 장치를 확인하세요. 음성 읽기의 실제 스피커 출력은 이번 가상 기기 검사로 검증하지 않았습니다.</p></div></details>
+<details><summary>재부팅하거나 강제 중지한 뒤 멈춰 있어요</summary><div><p>직접 만든 매크로의 조건 감시는 다시 시작해야 합니다. 기본 연결 복구는 첫 잠금 해제 후 재개할 수 있지만, 사용자가 강제 중지한 경우에는 앱에서 ‘감시 다시 시작’을 누릅니다. 두 감시의 상태를 각각 확인하세요.</p></div></details>
+<details><summary>정해진 시각에 정확히 실행되지 않아요</summary><div><p>매크로 감시는 약 15초 간격이며 절전 중에는 더 늦을 수 있습니다. 감시가 꺼져 있어 놓친 시각을 소급 실행하지 않습니다. 감지된 예약이 몰리면 실행 슬롯이 생길 때까지 같은 날 감시 중에 기다립니다. 중지·프로세스 종료·날짜 변경 시 대기열은 사라집니다.</p></div></details>
+</section>
+<section id="limits"><h2>지원 범위와 검증</h2>
+<p>매크로 한 개에 동작 최대 16개, 동시 실행은 최대 4개입니다. 같은 매크로의 중복 실행을 막고 자동 이벤트에 최소 5초 간격을 둡니다. 다음 단계로 진행할 때 전체 실행 시간이 180초를 넘으면 중단하며, 음성 한 단계의 완료 대기는 최대 60초입니다.</p>
+<p>현재 블루투스 트리거, 다른 앱 알림 수신, 앱 전환 감지, 화면 자동 클릭, HTTP, 파일 자동 처리, 변수·분기·반복은 지원하지 않습니다.</p>
+<p>0.3.1은 Android 16 가상 기기에서 Android 검사 38건, UI 시나리오 9개를 통과했습니다. 정책·예산·음성 세션 검사 32건과 대상 보호 모의 검사 3건도 통과했습니다. S23 Ultra 실기, 삼성 절전, 실제 음성 청취, 문서 제공자별 저장·불러오기 동작은 별도 확인 범위입니다.</p>
+<p>앱은 광고·결제·계정·외부 서버·인터넷 권한 없이 동작하며 설정과 기록을 앱 내부에 보관합니다. 시스템 TTS 엔진이나 Android 파일 선택기에서 이용하는 외부 서비스의 동작은 해당 서비스 설정에 따릅니다. Wi-Fi 이름이 같으면 서로 다른 네트워크를 구분하지 못하므로 본인이 관리하는 네트워크를 사용하세요.</p>
+<p>APK는 개인 시험용 개발 서명 버전입니다. 업데이트 전에 만든 매크로를 내보내 두세요.</p>
+<p class="hash"><strong>0.3.1 APK SHA-256</strong><br><code>47f8bd9336517d03026480d964ff016dfc62c1e7ecf7006653ec57c8f6d95735</code></p>
+</section>
+</main></div>
+<footer><p>이 설명서는 인터넷 없이 열 수 있는 HTML 파일입니다. APK 링크는 파일이 함께 제공된 원래 폴더에서 동작합니다. 다른 곳으로 옮기면 APK도 함께 보관하세요.</p><a href="#main">본문 처음으로</a></footer>
+</div>
+<script>
+'use strict';
+document.getElementById('print').addEventListener('click',()=>{const opened=[];document.querySelectorAll('details').forEach(d=>{if(!d.open){opened.push(d);d.open=true;}});const restore=()=>{opened.forEach(d=>d.open=false);window.removeEventListener('afterprint',restore);};window.addEventListener('afterprint',restore);window.print();});
+document.querySelectorAll('[data-copy]').forEach(button=>button.addEventListener('click',async()=>{const block=document.getElementById(button.dataset.copy),status=document.getElementById('copy-status');try{if(!navigator.clipboard)throw Error('unavailable');await navigator.clipboard.writeText(block.textContent);status.textContent='명령을 복사했어요. 기기 주소를 실제 값으로 바꾼 뒤 실행하세요.';}catch(e){const range=document.createRange();range.selectNodeContents(block);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);status.textContent='자동 복사를 지원하지 않는 환경입니다. 선택된 명령을 Ctrl+C 또는 길게 눌러 복사하세요.';}status.scrollIntoView({block:'nearest'});}));
+</script>
+</body>
+</html>
