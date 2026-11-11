@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="../../src/ScrcpyGui/Remote*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../../src/ScrcpyGui/MainWindow*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="../../src/ScrcpyGui/BlinkLinkProvisioner.cs" Link="BlinkLinkProvisioner.cs" />
     <Compile Include="../../src/ScrcpyGui/OptionDefinition.cs" Link="OptionDefinition.cs" />
     <Compile Include="../../src/ScrcpyGui/ScrcpyCommandLine.cs" Link="ScrcpyCommandLine.cs" />
     <Page Include="../../src/ScrcpyGui/MainWindow.xaml" Link="MainWindow.xaml" />

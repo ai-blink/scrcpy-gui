@@ -20,7 +20,7 @@
 <h1>Blink Link 사용 설명서</h1>
 <p class="lead">휴대폰의 무선 연결을 복구하고,<br>원하는 조건에 맞춰 매크로를 실행하세요.</p>
 <p class="muted">버전 0.3.1 · 한국어 안내 · 2026년 11월 11일</p>
-<div class="actions"><a class="action primary" href="../app/android/BlinkLink-0.3.1-debug.apk" download>0.3.1 APK 받기</a><a class="action" href="#setup">처음 설정하기</a><button type="button" id="print" class="no-print">인쇄 · PDF로 저장</button></div>
+<div class="actions"><a class="action primary" href="#setup">PC에서 설치 · 권한 설정</a><a class="action" href="../app/android/BlinkLink-0.3.1-debug.apk" download>휴대폰 APK 직접 받기</a><button type="button" id="print" class="no-print">인쇄 · PDF로 저장</button></div>
 </header>
 <div class="layout">
 <nav aria-label="설명서 목차"><strong>필요한 내용으로 이동</strong><a href="#start">먼저 알아두기</a><a href="#setup">설치와 최초 설정</a><a href="#connection">연결 복구 사용</a><a href="#macros">매크로 만들기</a><a href="#examples">따라 만들기</a><a href="#backup">백업과 복원</a><a href="#help">문제 해결</a><a href="#limits">지원 범위</a></nav>
@@ -34,16 +34,14 @@
 <section id="setup"><h2>설치와 최초 설정</h2>
 <ol>
 <li><strong>휴대폰과 PC를 한 번 페어링합니다.</strong><p>휴대폰 개발자 옵션 → 무선 디버깅 → <strong>페어링 코드로 기기 페어링</strong>을 열고, PC의 scrcpy-gui에서 페어링하세요. 두 기기는 통신할 수 있는 Wi-Fi에 연결돼 있어야 합니다.</p></li>
-<li><strong>APK를 설치합니다.</strong><p>위의 APK 링크에서 파일을 받으세요. 휴대폰에서 직접 열거나 PC의 ADB로 설치할 수 있습니다. 기존 Blink Link 사용자는 같은 개발 서명 키의 0.3.1을 덮어 설치할 수 있습니다.</p></li>
-<li><strong>PC에서 최초 권한을 한 번 부여합니다.</strong><p>연결된 기기의 ADB 주소를 확인하고 아래 명령의 <code>&lt;기기주소:포트&gt;</code>를 바꿔 실행합니다. 페어링용 포트와 실제 연결용 포트는 다를 수 있습니다.</p>
-<pre id="grant"><code>adb -s &lt;기기주소:포트&gt; shell pm grant kr.blinklabs.blinklink android.permission.WRITE_SECURE_SETTINGS</code></pre><button class="copy" type="button" data-copy="grant">권한 명령 복사</button>
-<p>개발용 프로젝트 폴더에서 설치와 권한 부여를 함께 하려면 다음 PowerShell 명령을 사용합니다.</p><pre id="install"><code>.\android\install.ps1 -Serial '&lt;기기주소:포트&gt;' -GrantPermission</code></pre><button class="copy" type="button" data-copy="install">설치 명령 복사</button><p class="muted">두 명령 모두 주소를 실제 값으로 바꾼 뒤 실행해야 합니다. HTML 설명서에서 자동으로 실행되지는 않습니다.</p></li>
+<li><strong>PC의 scrcpy-gui에서 Blink Link 설정을 엽니다.</strong><p>상단의 <strong>Blink Link 설정</strong> 버튼을 누르고 대상 휴대폰을 목록에서 고릅니다. PC 실행 파일에 APK가 포함돼 있어 따로 찾지 않아도 됩니다. 기기가 안 보이면 먼저 페어링 또는 기기 찾기를 진행하세요.</p></li>
+<li><strong>‘이 휴대폰에 설치 · 권한 설정’을 누릅니다.</strong><p>PC 앱이 선택한 기기에 Blink Link를 설치하고 필요한 최초 권한을 부여한 뒤 적용 결과를 확인합니다. 기존 앱 데이터는 유지합니다. 끝나면 휴대폰에서 Blink Link를 엽니다. <strong>주소나 ADB 명령을 직접 입력할 필요가 없습니다.</strong></p><p>진행 중 연결이 끊기면 실패 이유가 표시됩니다. 다시 연결하고 같은 버튼으로 재시도하세요. 취소하더라도 이미 설치한 앱이나 부여한 권한은 유지될 수 있습니다.</p></li>
 <li><strong>앱에서 Wi-Fi 확인 권한을 준비합니다.</strong><p>Blink Link → <strong>설정 → 권한 설정 방법</strong>을 펼치세요. 정확한 위치·알림 권한을 허용하고, 앱의 위치 권한을 <strong>항상 허용</strong>으로 설정합니다. Android의 위치 설정도 켭니다. Wi-Fi 이름을 확인하기 위한 조건이며 앱은 위치 좌표를 저장하거나 전송하지 않습니다.</p></li>
 <li><strong>사용할 Wi-Fi를 등록합니다.</strong><p>설정에서 <strong>현재 Wi-Fi 등록</strong>을 누르고 이름을 확인하세요. 본인이 관리하는 네트워크를 등록합니다. 현재 한 개의 Wi-Fi 이름을 저장하며 새로 등록하면 기존 이름을 바꿉니다.</p></li>
 <li><strong>자동 복구를 시작하고 PC에서 연결합니다.</strong><p>연결 화면에서 <strong>자동 복구 시작 → 시작</strong>을 누릅니다. Android의 허용 창이 나오면 네트워크를 확인하세요. 사용할 수 있는 경우 <strong>이 네트워크에서 항상 허용</strong>을 선택합니다. 이후 PC scrcpy-gui에서 실제 화면 연결을 확인합니다.</p></li>
 </ol>
 <p>감시가 자주 중단되면 앱의 <strong>설정 → 앱 권한 · 배터리 설정</strong>에서 삼성 배터리 설정의 ‘제한 없음’을 확인할 수 있습니다. 제조사의 절전 동작까지 완전히 방지하는 것은 아닙니다.</p>
-<p class="status" id="copy-status" role="status" aria-live="polite"></p>
+<details><summary>개발자용 수동 설치 명령 (선택 사항)</summary><div><p>일반 사용자는 위의 PC 버튼으로 준비하면 됩니다. 아래는 개발 환경에서 직접 확인할 때만 사용합니다.</p><pre id="grant"><code>adb -s &lt;기기주소:포트&gt; shell pm grant kr.blinklabs.blinklink android.permission.WRITE_SECURE_SETTINGS</code></pre><button class="copy" type="button" data-copy="grant">권한 명령 복사</button><pre id="install"><code>.\android\install.ps1 -Serial '&lt;기기주소:포트&gt;' -GrantPermission</code></pre><button class="copy" type="button" data-copy="install">설치 명령 복사</button><p class="status" id="copy-status" role="status" aria-live="polite"></p></div></details>
 </section>
 <section id="connection"><h2>연결 복구 사용</h2>
 <div class="table-wrap" tabindex="0" role="region" aria-label="연결 화면 버튼 설명"><table><thead><tr><th scope="col">버튼 / 화면</th><th scope="col">사용할 때</th></tr></thead><tbody>

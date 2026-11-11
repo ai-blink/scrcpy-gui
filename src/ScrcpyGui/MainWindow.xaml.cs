@@ -65,6 +65,7 @@ public partial class MainWindow : Window
         RestoreLastValues();
         ReloadPresetList(_selectedPresetName);
         ResolveExecutables();
+        InitializeBlinkLinkSetup();
         NavigationList.SelectedIndex = 0;
         OptionTabs.SelectedIndex = 0;
         UpdatePreview();
