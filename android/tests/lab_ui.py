@@ -53,15 +53,20 @@ def click(text,scroll=False):
     x1,y1,x2,y2=map(int,re.findall(r'\d+',n.get('bounds')))
     if y2-y1<40:continue
     adb('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2));time.sleep(.6);return
-  if scroll:adb('shell','input','swipe','540','1950','540','650','350');time.sleep(.3)
+  if scroll:
+   area=next(n for n in root.iter('node') if n.get('class')=='android.widget.ScrollView')
+   x1,y1,x2,y2=map(int,re.findall(r'\d+',area.get('bounds')));x=(x1+x2)//2
+   adb('shell','input','swipe',str(x),str(y1+(y2-y1)*4//5),str(x),str(y1+(y2-y1)//5),'350');time.sleep(.3)
  raise RuntimeError('Not visible: '+text)
 def top():
- for _ in range(5):adb('shell','input','swipe','540','500','540','1950','200')
+ root=dump();area=next(n for n in root.iter('node') if n.get('class')=='android.widget.ScrollView')
+ x1,y1,x2,y2=map(int,re.findall(r'\d+',area.get('bounds')));x=(x1+x2)//2
+ for _ in range(5):adb('shell','input','swipe',str(x),str(y1+(y2-y1)//5),str(x),str(y1+(y2-y1)*4//5),'200')
 if __name__=='__main__':
  adb('shell','am','start','-n',PKG+'/.MainActivity')
- click('자동 복구 시작');root=dump('missing-permission');assert any(n.get('text')=='준비가 필요합니다' for n in root.iter('node'));click('확인');print('PASS missing permission gate',flush=True)
+ click('설정 이어하기');root=dump('missing-permission');assert any(n.get('text')=='처음 한 번 설정' for n in root.iter('node'));print('PASS missing permission setup route',flush=True)
  for perm in ['ACCESS_COARSE_LOCATION','ACCESS_FINE_LOCATION','ACCESS_BACKGROUND_LOCATION','POST_NOTIFICATIONS','WRITE_SECURE_SETTINGS']:
   adb('shell','pm','grant',PKG,'android.permission.'+perm)
  adb('shell','cmd','location','set-location-enabled','true')
  click('현재 Wi-Fi 등록',True);root=dump('register');print([(n.get('text'),n.get('bounds')) for n in root.iter('node') if n.get('text')],flush=True)
- click('등록');top();adb('shell','settings','put','global','adb_wifi_enabled','0');click('자동 복구 시작');click('시작');time.sleep(3);dump('first-recovery');screenshot('first-recovery');print('ADB_WIFI_ENABLED',adb('shell','settings','get','global','adb_wifi_enabled'),flush=True)
+ click('등록');click('연결');adb('shell','settings','put','global','adb_wifi_enabled','0');click('자동 복구 시작');click('시작');time.sleep(3);dump('first-recovery');screenshot('first-recovery');print('ADB_WIFI_ENABLED',adb('shell','settings','get','global','adb_wifi_enabled'),flush=True)

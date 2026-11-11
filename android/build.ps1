@@ -32,7 +32,7 @@ New-Item -ItemType Directory -Force (Split-Path -Parent $key) | Out-Null
 if (!(Test-Path -LiteralPath $key)) {
     Invoke-Checked "$JavaHome\bin\keytool.exe" @('-genkeypair','-keystore',$key,'-storepass','android','-keypass','android','-alias','androiddebugkey','-dname','CN=Android Debug,O=Android,C=US','-keyalg','RSA','-keysize','2048','-validity','10000')
 }
-$apk = Join-Path $out 'BlinkLink-0.1.1-debug.apk'
+$apk = Join-Path $out 'BlinkLink-0.2.0-debug.apk'
 Invoke-Checked "$JavaHome\bin\java.exe" @('-jar',"$bt\lib\apksigner.jar",'sign','--ks',$key,'--ks-key-alias','androiddebugkey','--ks-pass','pass:android','--key-pass','pass:android','--out',$apk,"$build\aligned.apk")
 Invoke-Checked "$JavaHome\bin\java.exe" @('-jar',"$bt\lib\apksigner.jar",'verify','--verbose',$apk)
 Get-FileHash -LiteralPath $apk -Algorithm SHA256
