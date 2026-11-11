@@ -1,17 +1,50 @@
 # Guest-only Android UI test helpers. Main setup requires a fresh app install.
 import subprocess,time,pathlib,xml.etree.ElementTree as E,re,json
-P=pathlib.Path(__file__).resolve().parents[2] / 'work' / 'android-lab'
+ROOT=pathlib.Path(__file__).resolve().parents[2]
+P=ROOT / 'work' / 'android-lab' / 'review-fix'
 P.mkdir(parents=True,exist_ok=True)
 ADB=r'C:\app\scrcpy-win64-v4.1\adb.exe'
 SER='emulator-5580'; PKG='kr.blinklabs.blinklink'
-def adb(*args):
- if not SER.startswith('emulator-'):raise RuntimeError('Only an Android emulator is permitted')
+AVD='BlinkLink16'
+def raw(*args):
  r=subprocess.run([ADB,'-s',SER,*args],capture_output=True,timeout=40)
  if r.returncode:raise RuntimeError(r.stderr.decode(errors='replace'))
  return r.stdout.decode('utf8',errors='replace').strip()
+def validate_target(require_package=True):
+ if not SER.startswith('emulator-'):raise RuntimeError('Only an Android emulator is permitted')
+ name=raw('emu','avd','name').splitlines()[0].strip()
+ if name!=AVD:raise RuntimeError('Wrong AVD: '+name)
+ if raw('shell','getprop','ro.kernel.qemu')!='1':raise RuntimeError('Not an emulator')
+ if require_package and not raw('shell','pm','path',PKG).startswith('package:'):raise RuntimeError('App is not installed')
+def adb(*args):
+ validate_target()
+ return raw(*args)
 def dump(name='current'):
  adb('shell','uiautomator','dump','/sdcard/blink.xml');xml=adb('shell','cat','/sdcard/blink.xml');(P/(name+'.xml')).write_text(xml,encoding='utf8');return E.fromstring(xml)
-def screenshot(name): (P/(name+'.png')).write_bytes(subprocess.check_output([ADB,'-s',SER,'exec-out','screencap','-p']))
+def screenshot(name):
+ validate_target()
+ (P/(name+'.png')).write_bytes(subprocess.check_output([ADB,'-s',SER,'exec-out','screencap','-p']))
+def wait_on(limit=45):
+ start=time.monotonic()
+ while time.monotonic()-start<limit:
+  if adb('shell','settings','get','global','adb_wifi_enabled')=='1':return round(time.monotonic()-start,1)
+  time.sleep(1)
+ raise AssertionError('Enable timed out')
+def assert_off_for(seconds):
+ deadline=time.monotonic()+seconds
+ while time.monotonic()<deadline:
+  assert adb('shell','settings','get','global','adb_wifi_enabled')=='0', 'Unexpected enable'
+  time.sleep(2)
+def foreground():
+ return 'isForeground=true' in adb('shell','dumpsys','activity','services',PKG)
+def show_app():
+ adb('shell','am','start','-n',PKG+'/.MainActivity');time.sleep(2)
+def resume():
+ show_app()
+ texts=[n.get('text') for n in dump().iter('node')]
+ if '자동 복구 일시정지' in texts:return
+ click('감시 다시 시작' if '감시 다시 시작' in texts else '자동 복구 시작');click('시작');time.sleep(2)
+ assert foreground()
 def click(text,scroll=False):
  for i in range(8 if scroll else 1):
   root=dump()

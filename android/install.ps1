@@ -4,7 +4,7 @@ param(
     [switch]$GrantPermission
 )
 $ErrorActionPreference = 'Stop'
-$apk = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\app\android\BlinkLink-0.1.0-debug.apk'))
+$apk = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\app\android\BlinkLink-0.1.1-debug.apk'))
 if (!(Test-Path -LiteralPath $apk)) { throw 'APK가 없습니다. 먼저 build.ps1을 실행하세요.' }
 & $Adb -s $Serial get-state
 if ($LASTEXITCODE -ne 0) { throw '지정한 기기가 연결되지 않았습니다. PC와 먼저 페어링하세요.' }

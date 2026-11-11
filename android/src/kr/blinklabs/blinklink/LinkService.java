@@ -7,13 +7,12 @@ import android.os.*;
 import android.content.pm.ServiceInfo;
 
 public final class LinkService extends Service {
+    private static volatile boolean running;
+    public static boolean isRunning() { return running; }
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ConnectivityManager cm;
     private ConnectivityManager.NetworkCallback callback;
     private String last = "";
-    private long windowStart;
-    private int attempts;
-    private long lastAttemptAt = -5000;
     private android.database.ContentObserver adbObserver;
     private final Runnable tick = new Runnable() {
         public void run() { check(); handler.postDelayed(this, 30000); }
@@ -42,12 +41,13 @@ public final class LinkService extends Service {
             @Override public void onChange(boolean selfChange) { check(); }
         };
         getContentResolver().registerContentObserver(android.provider.Settings.Global.getUriFor(LinkState.KEY), false, adbObserver);
+        running = true;
+        LinkState.prefs(this).edit().remove("owned").apply();
         handler.post(tick);
     }
     @Override public int onStartCommand(Intent i, int flags, int id) {
         if (i != null && "pause".equals(i.getAction())) {
-            LinkState.prefs(this).edit().putBoolean("enabled", false).apply();
-            LinkState.log(this, "자동 복구 일시정지 · 현재 디버깅 상태는 유지됩니다.");
+            LinkState.pause(this);
         }
         if (!LinkState.enabled(this)) { stopSelf(); return START_NOT_STICKY; }
         check(); return START_STICKY;
@@ -60,20 +60,14 @@ public final class LinkService extends Service {
             case WIFI: report("Wi-Fi 연결 대기"); break;
             case IDENTITY: report("Wi-Fi 이름 확인 불가 · 위치 권한 '항상 허용'과 위치 켜짐을 확인하세요."); break;
             case OTHER_WIFI:
-                if (LinkState.prefs(this).getBoolean("owned", false)) {
-                    if (LinkState.setAdb(this, false)) LinkState.prefs(this).edit().putBoolean("owned", false).apply();
-                }
-                report("다른 Wi-Fi · 자동 켜기 차단"); break;
+                // Settings.Global cannot identify who owns an existing ON value.
+                // Never disable another session based on a historical boolean.
+                report("다른 Wi-Fi · 자동 켜기 차단 · 기존 디버깅 상태 유지"); break;
             case ALREADY_ON:
-                attempts = 0; windowStart = 0;
                 report("무선 디버깅 켜짐 · PC 연결 여부는 PC에서 확인하세요."); break;
             case ENABLE:
-                long now = SystemClock.elapsedRealtime();
-                if (now - lastAttemptAt < 5000) break;
-                if (now - windowStart >= 300000 || windowStart == 0) { windowStart = now; attempts = 0; }
-                if (attempts >= 3) { report("재시도 대기 · Android 허용 창/개발자 옵션 확인 · 5분마다 최대 3회"); break; }
-                attempts++; lastAttemptAt = now;
-                if (LinkState.setAdb(this, true)) LinkState.prefs(this).edit().putBoolean("owned", true).apply();
+                if (!LinkState.takeAutomaticRequest(this)) { report("재시도 대기 · 최근 5분에 자동 요청 최대 3회 · 직접 복구 가능"); break; }
+                LinkState.setAdb(this, true);
                 handler.postDelayed(() -> {
                     if (LinkState.enabled(this)) report(LinkState.adb(this) ? "무선 디버깅 켜짐 · PC 연결은 별도 확인" : "켜짐 미확인 · Android의 Wi-Fi 허용 창을 확인하세요.");
                 }, 1500);
@@ -82,6 +76,7 @@ public final class LinkService extends Service {
         }
     }
     @Override public void onDestroy() {
+        running = false;
         handler.removeCallbacksAndMessages(null);
         if (adbObserver != null) getContentResolver().unregisterContentObserver(adbObserver);
         if (cm != null && callback != null) cm.unregisterNetworkCallback(callback);

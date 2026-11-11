@@ -33,6 +33,24 @@ public final class LinkState {
         } catch (SecurityException e) { return ""; }
     }
     public static String trusted(Context c) { return prefs(c).getString("trusted", ""); }
+    public static boolean backgroundReady(Context c) {
+        return c.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            && c.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+    public static synchronized boolean takeAutomaticRequest(Context c) {
+        int boot = Settings.Global.getInt(c.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+        android.content.SharedPreferences p = prefs(c);
+        RetryBudget budget = new RetryBudget(p.getInt("budget_boot", -2) == boot ? p.getString("budget", "") : "");
+        boolean accepted = budget.take(android.os.SystemClock.elapsedRealtime());
+        // Commit before issuing the setting write; service/process restarts keep the limit.
+        boolean saved = p.edit().putInt("budget_boot", boot).putString("budget", budget.save()).commit();
+        return accepted && saved;
+    }
+    public static void pause(Context c) {
+        prefs(c).edit().putBoolean("enabled", false).remove("owned").apply();
+        c.stopService(new Intent(c, LinkService.class));
+        log(c, "자동 복구 일시정지 · 현재 디버깅 상태 유지");
+    }
     public static synchronized void log(Context c, String message) {
         String line = new SimpleDateFormat("MM-dd HH:mm:ss", Locale.KOREA).format(new Date()) + "  " + message;
         String old = prefs(c).getString("log", "");
@@ -51,7 +69,22 @@ public final class LinkState {
         }
     }
     public static void start(Context c) {
+        if (lastUserStop(c) > prefs(c).getLong("acknowledged_stop", 0)) {
+            log(c, "사용자가 감시를 중지했습니다. '감시 다시 시작'을 눌러주세요.");
+            return;
+        }
         try { c.startForegroundService(new Intent(c, LinkService.class)); }
-        catch (RuntimeException e) { log(c, "감시 시작 제한 · 앱을 열어 다시 시작하세요: " + e.getClass().getSimpleName()); }
+        catch (RuntimeException e) { log(c, "감시 시작 실패 · '감시 다시 시작'을 눌러주세요: " + e.getClass().getSimpleName()); }
+    }
+    private static long lastUserStop(Context c) {
+        long latest = 0;
+        for (android.app.ApplicationExitInfo info : c.getSystemService(android.app.ActivityManager.class).getHistoricalProcessExitReasons(c.getPackageName(), 0, 16)) {
+            if (info.getReason() == android.app.ApplicationExitInfo.REASON_USER_REQUESTED) latest = Math.max(latest, info.getTimestamp());
+        }
+        return latest;
+    }
+    public static void startExplicitly(Context c) {
+        prefs(c).edit().putBoolean("enabled", true).putLong("acknowledged_stop", lastUserStop(c)).apply();
+        start(c);
     }
 }

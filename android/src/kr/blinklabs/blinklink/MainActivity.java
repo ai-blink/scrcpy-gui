@@ -29,20 +29,20 @@ public final class MainActivity extends Activity {
         text("휴대폰을 다시 잡지 않아도\nPC 연결을 준비합니다.", 21, false);
         status = text("상태 확인 중", 18, true);
         toggle = button("자동 복구 시작", () -> {
-            if (LinkState.enabled(this)) { pause(); return; }
-            if (!LinkState.permission(this) || LinkState.trusted(this).isEmpty()) { dialog("준비가 필요합니다", "아래에서 PC 권한을 부여하고 사용할 Wi-Fi를 등록하세요."); return; }
+            if (LinkService.isRunning()) { pause(); return; }
+            if (!LinkState.permission(this) || LinkState.trusted(this).isEmpty() || !LinkState.backgroundReady(this)) { dialog("준비가 필요합니다", "PC 권한, 사용할 Wi-Fi 등록, 정확한 위치 및 위치 '항상 허용'을 확인하세요."); return; }
             new AlertDialog.Builder(this).setTitle("자동 복구를 시작할까요?")
                 .setMessage("등록 Wi-Fi에서 무선 디버깅을 켭니다. 기존에 페어링한 PC가 접근할 수 있습니다. 알림에서 언제든 일시정지할 수 있습니다. 재부팅 후 첫 잠금 해제 뒤 감시를 재개합니다.")
-                .setPositiveButton("시작", (d,w) -> { LinkState.prefs(this).edit().putBoolean("enabled", true).apply(); LinkState.start(this); update(); }).setNegativeButton("취소",null).show();
+                .setPositiveButton("시작", (d,w) -> { LinkState.startExplicitly(this); update(); }).setNegativeButton("취소",null).show();
         });
         button("지금 한 번 복구", () -> {
             if (!LinkState.wifi(this) || LinkState.trusted(this).isEmpty() || !LinkState.trusted(this).equals(LinkState.ssid(this))) {
                 dialog("등록 Wi-Fi를 확인하세요", "등록한 Wi-Fi가 연결되고 이름이 확인될 때만 켤 수 있습니다."); return;
             }
-            if (LinkState.setAdb(this,true)) LinkState.prefs(this).edit().putBoolean("owned",true).apply(); update();
+            if (!LinkState.adb(this)) LinkState.setAdb(this,true); update();
         });
         button("디버깅 끄고 복구 정지", () -> new AlertDialog.Builder(this).setTitle("PC 연결이 끊길 수 있습니다")
-            .setMessage("무선 디버깅과 자동 복구를 모두 끕니다.").setPositiveButton("끄기",(d,w)->{pause(); LinkState.setAdb(this,false); LinkState.prefs(this).edit().putBoolean("owned",false).apply(); update();}).setNegativeButton("취소",null).show());
+            .setMessage("무선 디버깅과 자동 복구를 모두 끕니다.").setPositiveButton("끄기",(d,w)->{pause(); LinkState.setAdb(this,false); update();}).setNegativeButton("취소",null).show());
         text("처음 한 번 준비", 24, true);
         text("1. 위치 권한을 허용하고 Android 위치를 켜세요. Wi-Fi 이름을 구분할 때만 사용하며 위치를 저장하거나 전송하지 않습니다.", 17, false);
         button("위치 · 알림 권한 허용", () -> {
@@ -65,7 +65,7 @@ public final class MainActivity extends Activity {
         text("3. Android의 무선 디버깅 허용 창에서 현재 Wi-Fi를 허용하세요. 페어링과 잠금 해제는 Android 확인이 필요합니다. 이 앱은 PC 연결 성공을 판정하지 않습니다.",17,false);
         text("최근 동작",24,true); log=text("",14,false); log.setTextIsSelectable(true);
     }
-    private void pause() { LinkState.prefs(this).edit().putBoolean("enabled",false).apply(); stopService(new Intent(this,LinkService.class)); LinkState.log(this,"자동 복구 일시정지 · 디버깅 상태 유지"); update(); }
+    private void pause() { LinkState.pause(this); update(); }
     private void open(Intent i) { try { startActivity(i); } catch (ActivityNotFoundException e) { dialog("직접 설정을 열어주세요","이 기기에서는 해당 설정 바로가기를 지원하지 않습니다."); } }
     private void dialog(String title,String body) { new AlertDialog.Builder(this).setTitle(title).setMessage(body).setPositiveButton("확인",null).show(); }
     private TextView text(String s,int size,boolean bold) { TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(Color.rgb(22,40,58));t.setPadding(0,dp(10),0,dp(10));if(bold)t.setTypeface(null,1);column.addView(t);return t; }
@@ -73,8 +73,8 @@ public final class MainActivity extends Activity {
     private void update() {
         String trusted=LinkState.trusted(this), current=LinkState.ssid(this);
         String bg=checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)==PackageManager.PERMISSION_GRANTED?"허용":"항상 허용 필요";
-        status.setText("자동 복구  " + (LinkState.enabled(this)?"사용 중":"일시정지") + "\nPC 권한  " + (LinkState.permission(this)?"준비됨":"최초 부여 필요") + "\n무선 디버깅  " + (LinkState.adb(this)?"켜짐":"꺼짐") + "\n등록 Wi-Fi  " + (trusted.isEmpty()?"미등록":trusted) + "\n현재 Wi-Fi  " + (current.isEmpty()?"확인 불가":current) + "\n백그라운드 위치  " + bg + "\n\n" + LinkState.prefs(this).getString("status","아래 준비 단계를 완료하세요."));
-        toggle.setText(LinkState.enabled(this)?"자동 복구 일시정지":"자동 복구 시작"); log.setText(LinkState.prefs(this).getString("log","아직 동작 기록이 없습니다."));
+        status.setText("자동 복구  " + (LinkService.isRunning()?"감시 중":LinkState.enabled(this)?"감시 중단 · 다시 시작 필요":"일시정지") + "\nPC 권한  " + (LinkState.permission(this)?"준비됨":"최초 부여 필요") + "\n무선 디버깅  " + (LinkState.adb(this)?"켜짐":"꺼짐") + "\n등록 Wi-Fi  " + (trusted.isEmpty()?"미등록":trusted) + "\n현재 Wi-Fi  " + (current.isEmpty()?"확인 불가":current) + "\n백그라운드 위치  " + bg + "\n\n" + LinkState.prefs(this).getString("status","아래 준비 단계를 완료하세요."));
+        toggle.setText(LinkService.isRunning()?"자동 복구 일시정지":LinkState.enabled(this)?"감시 다시 시작":"자동 복구 시작"); log.setText(LinkState.prefs(this).getString("log","아직 동작 기록이 없습니다."));
     }
     @Override public void onResume(){super.onResume();handler.post(refresh);}
     @Override public void onPause(){handler.removeCallbacks(refresh);super.onPause();}
