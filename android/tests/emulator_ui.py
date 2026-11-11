@@ -43,8 +43,13 @@ try:
  click('지금 한 번 복구');wait_on();record('pause and single recovery work from home')
  capture('home-paused');resume();home()
  click('설정');top();r=capture('setup-light');assert has(r,'처음 한 번 설정') and has(r,'준비가 끝났어요')
- click('PC 설정 방법',True);click('권한 명령 복사',True);r=capture('pc-help')
- assert has(r,'권한 명령을 복사했어요');record('setup progress, expandable PC help and visible copy feedback')
+ click('PC 설정 방법',True)
+ for _ in range(4):
+  r=dump()
+  if has(r,'주소나 ADB 명령을 입력할 필요가 없습니다'):break
+  area=next(n for n in r.iter('node') if n.get('class')=='android.widget.ScrollView');x1,y1,x2,y2=map(int,re.findall(r'\d+',area.get('bounds')));adb('shell','input','swipe',str((x1+x2)//2),str(y1+(y2-y1)*4//5),str((x1+x2)//2),str(y1+(y2-y1)//3),'300')
+ r=capture('pc-help')
+ assert has(r,'Blink Link 설정') and not has(r,'권한 명령 복사');record('setup progress and GUI-first PC preparation instructions')
  time.sleep(4);home();click('기록');r=capture('history-light');assert has(r,'최근 동작') and has(r,'기록 복사')
  adb('shell','input','keyevent','4');time.sleep(1);assert has(dump(),'지금 한 번 복구');record('history navigation and system Back return home')
  adb('shell','am','force-stop',PKG);show_app();r=capture('home-stopped');assert has(r,'감시 중단') and has(r,'감시 다시 시작');assert not foreground()

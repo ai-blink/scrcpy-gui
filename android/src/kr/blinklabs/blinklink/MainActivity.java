@@ -19,7 +19,6 @@ import android.widget.*;
 /** Native, task-first UI. Monitoring and retry behavior stay in LinkService/LinkState. */
 public final class MainActivity extends Activity {
     private static final int CONNECTION=0, SETUP=1, HISTORY=2;
-    private static final String COMMAND="adb -s <기기주소:포트> shell pm grant kr.blinklabs.blinklink android.permission.WRITE_SECURE_SETTINGS";
     private LinearLayout content, pcHelp, accessHelp;
     private ScrollView scroll;
     private TextView headline, guidance, monitorValue, wifiValue, feedback, log, preparation;
@@ -130,9 +129,8 @@ public final class MainActivity extends Activity {
         pcHelp=vertical();gap(pcHelp,12);
         text(pcHelp,"휴대폰의 개발자 옵션 → 무선 디버깅 → 페어링 코드로 기기 페어링을 열고, PC의 scrcpy-gui에서 페어링하세요.",16,false,colors.muted);
         gap(pcHelp,12);button(pcHelp,"개발자 옵션 · 페어링 열기",false,false,()->open(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)));
-        gap(pcHelp,12);text(pcHelp,"페어링 후 PC에서 아래 명령을 실행하세요. <기기주소:포트>는 연결된 휴대폰의 값으로 바꿉니다.",16,false,colors.muted);
-        gap(pcHelp,12);TextView command=text(pcHelp,COMMAND,14,false,colors.ink);command.setTypeface(Typeface.MONOSPACE);command.setTextIsSelectable(true);
-        gap(pcHelp,12);button(pcHelp,"권한 명령 복사",false,false,()->copy(COMMAND,"권한 명령을 복사했어요."));
+        gap(pcHelp,12);text(pcHelp,"PC의 scrcpy-gui 상단에서 'Blink Link 설정'을 누르세요. 휴대폰을 고르고 '이 휴대폰에 설치 · 권한 설정'을 누르면 설치와 최초 권한 설정을 함께 처리합니다.",16,false,colors.ink);
+        gap(pcHelp,12);text(pcHelp,"주소나 ADB 명령을 입력할 필요가 없습니다. PC에 '설치와 최초 권한 설정을 확인했습니다'가 표시되면 이 화면에서 준비됨 상태를 확인하세요.",16,false,colors.muted);
         gap(pcHelp,12);text(pcHelp,"Android 허용 창에서 본인의 Wi-Fi를 확인하세요. 이후에도 시스템 허용이나 잠금 해제가 필요할 수 있습니다.",14,false,colors.muted);
         content.addView(pcHelp);syncHelp();
         gap(content,24);button(content,"연결 화면으로",true,false,()->showPage(CONNECTION));

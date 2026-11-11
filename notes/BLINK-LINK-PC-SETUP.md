@@ -1,6 +1,6 @@
 # scrcpy-gui Blink Link 준비 기능
 
-2026-11-11 · PC 로컬 빌드0.4.1 / 동봉 Android 앱0.3.1.
+2026-11-11 · PC 로컬 빌드0.4.2 / 동봉 Android 앱0.3.2.
 
 ## 사용자 흐름
 
@@ -28,13 +28,15 @@
 - `dotnet run --project tests/BlinkLinkSetup.Tests -c Release`:23개 assertion 통과. 기기 고정, 사용자 변경, 설치/권한 실패 시 후속 작업 차단, 취소, 잘못된 APK 거절, 배포용 WPF DLL의 embedded APK 해시를 검사한다. GUI나 기기 입력을 사용하지 않는다.
 - 전용 Android16 AVD BlinkLink16 / emulator-5580에서 최초 권한을 해제한 다음 같은 provisioning 클래스로 실제 install→grant→dumpsys verify→am start가 통과했다. 각 명령 전 AVD 이름과 qemu 속성을 확인했다. 결과: `work/pc-blink-setup/android-integration.txt`.
 - WPF 배포 및 기존 RemoteControls.Tests 프로젝트 컴파일:경고0/오류0. 기존 전체 WPF GUI 검사 프로그램은 호스트에서 실행하지 않았다.
-- Hyper-V VM 조회는 현재 세션 권한 부족으로 거절돼 Windows UI 조작/스크린샷 검사는 수행하지 못했다. 호스트 GUI 테스트로 대체하지 않았다. Windows 버튼 배치/실제 클릭 수락과 삼성 실물 기기 설치는 미확인이다.
+- 최초에는 Hyper-V 접근 권한이 부족했으나 사용자의 명시적 UAC 승인 후 다시 실행했다. VM ID·게스트 UUID·디스크 체인·네트워크 어댑터 없음 검증을 통과한 BCU-Comparison-Windows의 TestAgent 데스크톱에서만 WPF 검사를 실행했다.
+- Windows UI8개 assertion 통과: 800/640 폭에서 버튼 표시, 주소 입력 없이 대상 선택, 설치 버튼 하단 고정, 진행 중 대상 변경 방지, 선택 기기 고정 명령, 완료 후 재활성화, 설치 클릭→완료. 이 GUI 검사는 가짜 ADB를 사용하며 실제 Android 설치 검사는 별도 AVD에서 수행했다. 결과와 렌더링 PNG: `work/pc-blink-setup/hyperv/`. 호스트 키보드·마우스 입력은 주입하지 않았다.
+- APK0.3.2의 PC 설정 안내에서 수동 명령/복사 버튼을 제거하고 PC 상단 Blink Link 설정 버튼을 안내한다. Android16 AVD에 새 APK를 설치해 안내 문구와 명령 입력 UI 부재를 확인했다. PNG/XML: `work/android-lab/pc-guide-032/`.
 - 설명서 목차, 링크 대상, APK 링크, GUI 기본 안내를 정적으로 확인했다.
 
 ## 산출물
 
-- `app/ScrcpyGui.exe` (로컬0.4.1): `e363afc4d70547c6d365e2d490ae02f15afe32eaf25319987f6ec3959033cf61` (SHA-256).
-- 동봉 APK0.3.1: `47f8bd9336517d03026480d964ff016dfc62c1e7ecf7006653ec57c8f6d95735`.
+- `app/ScrcpyGui.exe` (로컬0.4.2): `b8696efc4c15126f8bb7bb3f36b0548b4929b4da73f59805551c7ef863fbac99` (SHA-256).
+- 동봉 APK0.3.2: `affd1245bc6e150ee0c1ffd2ea18e0eaa0231fac66483002819c0419841cce61`.
 - HTML: `app/android/BlinkLink-guide.html`, 원본 `android/manual.html`.
 
 사용자가 변경해 둔 MainWindow.xaml의 창 높이857 및 무관한 VMware 녹화 폴더를 보존했다. 새 버튼은 기존 WrapPanel에 코드로 추가한다.

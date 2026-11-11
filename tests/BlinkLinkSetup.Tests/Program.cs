@@ -15,7 +15,7 @@ internal static class Program
   try
   {
    if(args.Length==3&&args[0]=="--emulator")return await Emulator(args[1],args[2]);
-   var apk=Path.GetFullPath("app/android/BlinkLink-0.3.1-debug.apk");
+   var apk=Path.GetFullPath("app/android/BlinkLink-0.3.2-debug.apk");
    Check(BlinkLinkProvisioner.HasSecureSettingsPermission(Granted,"0"),"global development grant recognized");
    Check(!BlinkLinkProvisioner.HasSecureSettingsPermission(Granted.Replace("granted=true","granted=false"),"0"),"denied permission rejected");
    var perUser=Dump("    User 0: installed=true\n      android.permission.WRITE_SECURE_SETTINGS: granted=true\n    User 10: installed=true\n      android.permission.WRITE_SECURE_SETTINGS: granted=false\n");

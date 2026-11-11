@@ -3,7 +3,7 @@
 사용자의 S23 Ultra / One UI 8.5 / Android 16용으로 만든 개인용 앱이다. 등록한 Wi-Fi에서 무선 디버깅을 다시 켜 PC의 scrcpy가 연결할 수 있도록 준비한다. Android 16 AOSP 가상 기기에서 검증하며, 삼성 실물 기기 검증은 별도로 남긴다.
 
 - 소스: `C:\ai\projects\scrcpy-gui\android`
-- APK: `C:\ai\projects\scrcpy-gui\app\android\BlinkLink-0.3.1-debug.apk`
+- APK: `C:\ai\projects\scrcpy-gui\app\android\BlinkLink-0.3.2-debug.apk`
 - 앱 ID: `kr.blinklabs.blinklink`
 - 실행 기록: `C:\ai\projects\scrcpy-gui\work\android-lab`
 

@@ -11,7 +11,7 @@ using System.Windows.Threading;
 using System.Windows.Documents;
 using ScrcpyGui;
 
-internal static class Program
+internal static partial class Program
 {
     private static int _assertions;
     private static void Check(bool condition, string name)
@@ -23,6 +23,8 @@ internal static class Program
     public static int Main(string[] args)
     {
         if (args.Length >= 1 && args[0] == "devices") return FakeAdbDevices();
+        if (args.Contains("--blink-setup-ui")) return BlinkSetupUi();
+        if (Environment.GetEnvironmentVariable("SCRCPY_GUI_FAKE_BLINK_ADB")=="1" && args.FirstOrDefault()=="-s") return FakeBlinkAdb(args);
         if (args.Contains("--pipe-child")) { Thread.Sleep(5000); return 0; }
         if (args.Length == 2 && args[0] == "--spawn-pipe-child")
         {

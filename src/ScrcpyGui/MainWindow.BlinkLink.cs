@@ -38,7 +38,7 @@ public partial class MainWindow
         var body = new StackPanel { Margin = new Thickness(24) };
         TextBlock Text(string value, int size = 15) { var t = new TextBlock { Text = value, FontSize = size, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 14) }; body.Children.Add(t); return t; }
         Text("명령어 없이 휴대폰을 준비하세요", 23);
-        Text("연결된 휴대폰을 고르면 Blink Link 0.3.1 설치와 연결 복구에 필요한 최초 권한 설정을 함께 처리합니다. 기존 앱 데이터는 유지합니다.");
+        Text("연결된 휴대폰을 고르면 Blink Link 0.3.2 설치와 연결 복구에 필요한 최초 권한 설정을 함께 처리합니다. 기존 앱 데이터는 유지합니다.");
         Text("설정할 휴대폰", 17);
         var devices = new ComboBox { MinHeight = 48, FontSize = 16, Margin = new Thickness(0, 0, 0, 14) };
         AutomationProperties.SetName(devices, "Blink Link를 설정할 휴대폰");
@@ -92,7 +92,7 @@ public partial class MainWindow
             try
             {
                 directory = Path.Combine(Path.GetTempPath(), "ScrcpyGui-BlinkLink-" + Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
-                var apk = Path.Combine(directory, "BlinkLink-0.3.1.apk");
+                var apk = Path.Combine(directory, "BlinkLink-0.3.2.apk");
                 using (var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream("BlinkLink.apk") ?? throw new InvalidOperationException("설치 파일이 포함되지 않은 실행 파일입니다. 새 배포본을 받아주세요."))
                 using (var file = File.Create(apk)) await resource.CopyToAsync(file, token);
                 var setup = new BlinkLinkProvisioner(async (args, token, timeout) => { var reply = await RunProcessAsync(adbPath, args, token, timeout);return new BlinkAdbResult(reply.ExitCode, reply.Output); });
@@ -105,7 +105,7 @@ public partial class MainWindow
             finally
             {
                 busy = false;devices.IsEnabled = refresh.IsEnabled = true;install.IsEnabled = devices.SelectedItem is DeviceChoice;close.Content = "닫기";
-                if (directory is not null) { try { File.Delete(Path.Combine(directory, "BlinkLink-0.3.1.apk"));Directory.Delete(directory); } catch { /* Temporary APK only; never remove other files. */ } }
+                if (directory is not null) { try { File.Delete(Path.Combine(directory, "BlinkLink-0.3.2.apk"));Directory.Delete(directory); } catch { /* Temporary APK only; never remove other files. */ } }
             }
         };
         dialog.Loaded += async (_, _) => await LoadDevices();

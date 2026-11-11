@@ -14,6 +14,7 @@
     <Compile Include="../../src/ScrcpyGui/OptionDefinition.cs" Link="OptionDefinition.cs" />
     <Compile Include="../../src/ScrcpyGui/ScrcpyCommandLine.cs" Link="ScrcpyCommandLine.cs" />
     <Page Include="../../src/ScrcpyGui/MainWindow.xaml" Link="MainWindow.xaml" />
+    <EmbeddedResource Include="../../app/android/BlinkLink-0.3.2-debug.apk" LogicalName="BlinkLink.apk" />
     <Resource Include="../../src/ScrcpyGui/app-icon.ico" Link="app-icon.ico" />
   </ItemGroup>
   <Target Name="CopyMainWindowSource" AfterTargets="Build">

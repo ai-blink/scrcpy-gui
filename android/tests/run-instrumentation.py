@@ -2,7 +2,7 @@
 import subprocess
 import lab_ui as lab
 lab.validate_target()
-for apk in [lab.ROOT/'app/android/BlinkLink-0.3.1-debug.apk',lab.ROOT/'work/android-lab/macro-tests.apk']:
+for apk in [lab.ROOT/'app/android/BlinkLink-0.3.2-debug.apk',lab.ROOT/'work/android-lab/macro-tests.apk']:
     if not apk.exists():raise RuntimeError('Build APK first: '+str(apk))
     print(lab.adb('install','-r',str(apk)),flush=True)
 lab.adb('shell','pm','grant',lab.PKG,'android.permission.POST_NOTIFICATIONS')
