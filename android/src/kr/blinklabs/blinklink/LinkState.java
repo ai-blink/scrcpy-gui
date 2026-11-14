@@ -48,6 +48,7 @@ public final class LinkState {
     }
     public static void pause(Context c) {
         prefs(c).edit().putBoolean("enabled", false).remove("owned").apply();
+        cancelWatchdog(c);
         c.stopService(new Intent(c, LinkService.class));
         log(c, "자동 복구 일시정지 · 현재 디버깅 상태 유지");
     }
@@ -68,13 +69,27 @@ public final class LinkState {
             log(c, "설정 변경 실패: " + e.getClass().getSimpleName()); return false;
         }
     }
+    public static boolean userStopped(Context c) { return lastUserStop(c) > prefs(c).getLong("acknowledged_stop", 0); }
     public static void start(Context c) {
-        if (lastUserStop(c) > prefs(c).getLong("acknowledged_stop", 0)) {
+        if (userStopped(c)) {
             log(c, "사용자가 감시를 중지했습니다. '감시 다시 시작'을 눌러주세요.");
             return;
         }
+        scheduleWatchdog(c);
         try { c.startForegroundService(new Intent(c, LinkService.class)); }
         catch (RuntimeException e) { log(c, "감시 시작 실패 · '감시 다시 시작'을 눌러주세요: " + e.getClass().getSimpleName()); }
+    }
+    static final int WATCHDOG_JOB = 41;
+    /** 15-minute (Android minimum) check that revives the monitor; survives reboot. */
+    public static void scheduleWatchdog(Context c) {
+        android.app.job.JobScheduler js = c.getSystemService(android.app.job.JobScheduler.class);
+        if (js == null || js.getPendingJob(WATCHDOG_JOB) != null) return;
+        js.schedule(new android.app.job.JobInfo.Builder(WATCHDOG_JOB, new ComponentName(c, LinkWatchdog.class))
+            .setPeriodic(15 * 60 * 1000L).setPersisted(true).build());
+    }
+    public static void cancelWatchdog(Context c) {
+        android.app.job.JobScheduler js = c.getSystemService(android.app.job.JobScheduler.class);
+        if (js != null) js.cancel(WATCHDOG_JOB);
     }
     private static long lastUserStop(Context c) {
         long latest = 0;

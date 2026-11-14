@@ -27,6 +27,7 @@
         <service android:name=".LinkService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled persistent wireless debugging recovery on an explicitly selected Wi-Fi network for assistive PC access" />
         </service>
+        <service android:name=".LinkWatchdog" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
         </receiver>
