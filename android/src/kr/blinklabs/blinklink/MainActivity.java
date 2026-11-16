@@ -34,6 +34,7 @@ public final class MainActivity extends Activity {
     private Palette colors;
     private String feedbackMessage="";
     private final Handler handler=new Handler(Looper.getMainLooper());
+    private AlertDialog wifiDialog;private Runnable wifiRescan;
     private final Runnable refresh=new Runnable(){public void run(){update();handler.postDelayed(this,2000);}};
     private final Runnable hideFeedback=()->{feedbackMessage="";updateFeedback();};
 
@@ -99,7 +100,9 @@ public final class MainActivity extends Activity {
         gap(content,24);
         recover=button(content,"지금 한 번 복구",true,false,()->{
             if(!manualPrepared()){showPage(SETUP);return;}
-            if(!LinkState.wifi(this)||!LinkState.trusted(this).equals(LinkState.ssid(this))){say("등록한 Wi-Fi에 연결한 뒤 다시 눌러주세요.");return;}
+            String now=LinkState.ssid(this);
+            if(LinkState.wifi(this)&&!now.isEmpty()&&!LinkState.isTrusted(this,now)){registerWifi();return;}
+            if(!LinkState.wifi(this)||!LinkState.isTrusted(this,now)){say("등록한 Wi-Fi에 연결한 뒤 다시 눌러주세요.");return;}
             if(LinkState.adb(this)){say("무선 디버깅은 이미 켜져 있어요. PC에서 연결을 확인하세요.");return;}
             LinkState.setAdb(this,true);say("복구를 요청했어요. Android 허용 창이 나타나면 확인하세요.");update();
         });
@@ -121,8 +124,8 @@ public final class MainActivity extends Activity {
         gap(accessHelp,8);text(accessHelp,"앱 권한 → 위치 → 정확한 위치와 '항상 허용'을 선택하세요.",14,false,colors.muted);
         content.addView(accessHelp);syncAccess();
         sectionBreak();stepStatus[1]=step("2. 사용할 Wi-Fi");
-        text(content,"집처럼 본인이 관리하는 Wi-Fi에 연결한 뒤 등록하세요.",16,false,colors.muted);
-        gap(content,12);button(content,"현재 Wi-Fi 등록",false,false,this::registerWifi);
+        text(content,"주변 Wi-Fi 목록에서 집처럼 본인이 관리하는 Wi-Fi를 눌러 등록하세요. 공유기의 2.4GHz·5GHz 이름이 다르면 둘 다 고르세요.",16,false,colors.muted);
+        gap(content,12);button(content,"Wi-Fi 고르기",false,false,this::registerWifi);
         sectionBreak();stepStatus[2]=step("3. PC 연결 권한");
         text(content,"PC와 한 번 페어링하고 연결 복구 권한을 부여합니다.",16,false,colors.muted);
         gap(content,12);helpToggle=button(content,"PC 설정 방법",false,false,()->{pcHelpExpanded=!pcHelpExpanded;syncHelp();});
@@ -156,10 +159,63 @@ public final class MainActivity extends Activity {
             .setPositiveButton("시작",(d,w)->{LinkState.startExplicitly(this);feedbackMessage="";update();}).setNegativeButton("취소",null).show();
     }
     private void registerWifi(){
-        String ssid=LinkState.ssid(this);
-        if(!LinkState.wifi(this)||ssid.isEmpty()){say("Wi-Fi 이름을 확인할 수 없어요. Wi-Fi 연결, 위치 권한과 위치 켜짐을 확인하세요.");return;}
-        new AlertDialog.Builder(this).setTitle("이 Wi-Fi를 등록할까요?").setMessage(ssid+"\n본인이 관리하는 네트워크인지 확인하세요. 같은 이름의 네트워크를 구분하지는 못합니다.")
-            .setPositiveButton("등록",(d,w)->{LinkState.prefs(this).edit().putString("trusted",ssid).apply();LinkState.log(this,"사용할 Wi-Fi 등록 완료");say("사용할 Wi-Fi를 등록했어요.");update();}).setNegativeButton("취소",null).show();
+        // Live list: rescans while open. Rows keep their position once shown (new names append) so a tap
+        // never lands on a row that just moved; rows never disappear while open, so an untick can be undone.
+        if(wifiDialog!=null&&wifiDialog.isShowing())return;
+        android.net.wifi.WifiManager wm=getSystemService(android.net.wifi.WifiManager.class);
+        java.util.List<String> initial=LinkState.trustedList(this);
+        java.util.LinkedHashSet<String> picked=new java.util.LinkedHashSet<>(initial);
+        java.util.List<String> names=new java.util.ArrayList<>(),labels=new java.util.ArrayList<>();
+        LinearLayout box=vertical();box.setPadding(dp(24),dp(8),dp(24),0);
+        TextView hint=new TextView(this);hint.setTextSize(14);hint.setTextColor(colors.muted);box.addView(hint);
+        ListView list=new ListView(this);list.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);box.addView(list);
+        ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_list_item_multiple_choice,labels);list.setAdapter(adapter);
+        Runnable refresh=()->{
+            String current=LinkState.ssid(this),routerKey=routerKey(currentBssid());
+            java.util.Map<String,Integer> level=new java.util.HashMap<>();java.util.Set<String> same=new java.util.HashSet<>();
+            try{for(android.net.wifi.ScanResult r:wm.getScanResults()){
+                @SuppressWarnings("deprecation") String s=r.SSID;if(!RecoveryPolicy.validSsid(s))continue;
+                if(!level.containsKey(s)||level.get(s)<r.level)level.put(s,r.level);
+                if(!routerKey.isEmpty()&&routerKey.equals(routerKey(r.BSSID)))same.add(s);
+            }}catch(SecurityException ignored){}
+            if(RecoveryPolicy.validSsid(current)&&!level.containsKey(current))level.put(current,0);
+            java.util.List<String> fresh=new java.util.ArrayList<>();for(String s:level.keySet())if(!names.contains(s))fresh.add(s);
+            java.util.Collections.sort(fresh,(a,b)->a.equals(current)?-1:b.equals(current)?1:Integer.compare(level.get(b),level.get(a)));
+            names.addAll(fresh);
+            for(String s:initial)if(!names.contains(s))names.add(s);
+            labels.clear();
+            for(String s:names){
+                Integer l=level.get(s);String bars=l==null?"주변에 없음":l>=-60?"신호 강함":l>=-75?"신호 보통":"신호 약함";
+                labels.add(s+"\n"+(s.equals(current)?"연결됨 · ":same.contains(s)?"같은 공유기 · ":"")+bars+(initial.contains(s)?" · 등록됨":""));
+            }
+            adapter.notifyDataSetChanged();
+            for(int i=0;i<names.size();i++)list.setItemChecked(i,picked.contains(names.get(i)));
+            boolean located=checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED&&getSystemService(LocationManager.class).isLocationEnabled();
+            hint.setText(!located?"주변 Wi-Fi를 보려면 정확한 위치 권한과 위치 켜짐이 필요해요. 설정 화면 1단계를 먼저 확인하세요.":names.isEmpty()?"주변 Wi-Fi를 찾는 중이에요…":"우리 집 Wi-Fi를 눌러 체크한 뒤 저장하세요. 2.4GHz·5GHz 이름이 다르면 둘 다 고르세요.");
+        };
+        list.setOnItemClickListener((p,v,i,id)->{String s=names.get(i);if(!picked.remove(s))picked.add(s);refresh.run();});
+        BroadcastReceiver scans=new BroadcastReceiver(){public void onReceive(Context c,Intent i){refresh.run();}};
+        IntentFilter filter=new IntentFilter(android.net.wifi.WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
+        if(Build.VERSION.SDK_INT>=33)registerReceiver(scans,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(scans,filter);
+        // Android allows 4 foreground scans per 2 minutes; 30 s stays inside that budget. Paused in onPause.
+        wifiRescan=new Runnable(){@SuppressWarnings("deprecation") public void run(){try{wm.startScan();}catch(RuntimeException ignored){}handler.postDelayed(this,30000);}};
+        refresh.run();wifiRescan.run();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("주변 Wi-Fi · 눌러서 등록").setView(box)
+            .setPositiveButton("저장",null).setNegativeButton("취소",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            if(picked.isEmpty()){hint.setText("Wi-Fi를 하나 이상 골라주세요.");hint.setTextColor(colors.warning);return;}
+            LinkState.setTrusted(this,new java.util.ArrayList<>(picked));LinkState.log(this,"사용할 Wi-Fi 저장 · "+LinkState.trustedLabel(this));say("저장했어요 · "+LinkState.trustedLabel(this));dialog.dismiss();update();
+        }));
+        dialog.setOnDismissListener(d->{handler.removeCallbacks(wifiRescan);wifiRescan=null;wifiDialog=null;try{unregisterReceiver(scans);}catch(IllegalArgumentException ignored){}});
+        wifiDialog=dialog;dialog.show();
+    }
+    @SuppressWarnings("deprecation") private String currentBssid(){
+        try{android.net.wifi.WifiInfo i=getSystemService(android.net.wifi.WifiManager.class).getConnectionInfo();return i==null||i.getBSSID()==null?"":i.getBSSID();}catch(SecurityException e){return "";}
+    }
+    /** First five BSSID bytes; the 02:00:00:00:00:00 placeholder (no permission) never matches. */
+    private static String routerKey(String bssid){
+        if(bssid==null||bssid.length()<17||bssid.startsWith("02:00:00:00:00"))return "";
+        return bssid.substring(0,14).toLowerCase(java.util.Locale.ROOT);
     }
     private void requestAccess(){
         if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.POST_NOTIFICATIONS},10);
@@ -178,15 +234,15 @@ public final class MainActivity extends Activity {
         if(page==CONNECTION){
             headline.setText(!ready?(manualPrepared()?"자동 복구 설정이 필요해요":"처음 설정이 필요해요"):on?"무선 디버깅 켜짐":running?"연결 복구 대기 중":"무선 디버깅 꺼짐");
             headline.setTextColor(ready&&on?colors.success:colors.ink);
-            String message=!ready?"권한과 사용할 Wi-Fi를 준비하세요.":current.isEmpty()?"Wi-Fi 이름을 확인할 수 없어요. 위치 설정을 확인하세요.":!trusted.equals(current)?"등록된 Wi-Fi에서만 복구할 수 있어요.":on?"PC의 scrcpy에서 연결을 확인하세요.":running?"등록한 Wi-Fi에서 연결을 다시 준비합니다.":"자동 복구를 시작하거나 한 번만 복구할 수 있어요.";
-            if(ready&&running&&!on&&trusted.equals(current)&&LinkState.prefs(this).getString("status","").startsWith("재시도 대기"))message="자동 요청을 잠시 쉬고 있어요. 아래에서 직접 복구할 수 있어요.";
+            String message=!ready?"권한과 사용할 Wi-Fi를 준비하세요.":current.isEmpty()?"Wi-Fi 이름을 확인할 수 없어요. 위치 설정을 확인하세요.":!LinkState.isTrusted(this,current)?"등록되지 않은 Wi-Fi예요. 우리 집 Wi-Fi라면 아래에서 등록하세요.":on?"PC의 scrcpy에서 연결을 확인하세요.":running?"등록한 Wi-Fi에서 연결을 다시 준비합니다.":"자동 복구를 시작하거나 한 번만 복구할 수 있어요.";
+            if(ready&&running&&!on&&LinkState.isTrusted(this,current)&&LinkState.prefs(this).getString("status","").startsWith("재시도 대기"))message="자동 요청을 잠시 쉬고 있어요. 아래에서 직접 복구할 수 있어요.";
             guidance.setText(message);
             monitorValue.setText(running?"감시 중":LinkState.enabled(this)?"감시 중단 · 다시 시작 필요":"일시정지");monitorValue.setTextColor(running?colors.success:colors.warning);
-            wifiValue.setText(current.isEmpty()?"확인할 수 없음":current);recover.setText(manualPrepared()?"지금 한 번 복구":"설정 이어하기");
+            wifiValue.setText(current.isEmpty()?"확인할 수 없음":current);recover.setText(!manualPrepared()?"설정 이어하기":!current.isEmpty()&&!LinkState.isTrusted(this,current)?"이 Wi-Fi 등록":"지금 한 번 복구");
             toggle.setText(running?"자동 복구 일시정지":LinkState.enabled(this)?"감시 다시 시작":"자동 복구 시작");
         }else if(page==SETUP){
             boolean[] done={locationReady(),!trusted.isEmpty(),LinkState.permission(this)};int count=0;
-            for(int i=0;i<3;i++){if(done[i])count++;stepStatus[i].setText(done[i]?(i==1?"등록됨 · "+trusted:"준비됨"):(i==0?"정확한 위치 · 항상 허용 · 위치 켜짐 필요":"설정 필요"));stepStatus[i].setTextColor(done[i]?colors.success:colors.warning);}
+            for(int i=0;i<3;i++){if(done[i])count++;stepStatus[i].setText(done[i]?(i==1?"등록됨 · "+LinkState.trustedLabel(this):"준비됨"):(i==0?"정확한 위치 · 항상 허용 · 위치 켜짐 필요":"설정 필요"));stepStatus[i].setTextColor(done[i]?colors.success:colors.warning);}
             preparation.setText(count==3?"준비가 끝났어요. 연결 화면에서 시작하세요.":"3단계 중 "+count+"단계 준비됨");
         }else if(log!=null&&!log.hasSelection()){
             String value=LinkState.prefs(this).getString("log","");if(value.isEmpty())value="아직 동작 기록이 없어요.\n연결 화면에서 복구를 실행하면 여기에 표시됩니다.";
@@ -210,7 +266,7 @@ public final class MainActivity extends Activity {
     private Button button(LinearLayout parent,String label,boolean primary,boolean danger,Runnable action){Button b=makeButton(label,primary,danger,action);parent.addView(b,new LinearLayout.LayoutParams(-1,-2));return b;}
     @Override protected void onSaveInstanceState(Bundle state){scrollPositions[page]=scroll.getScrollY();state.putInt("page",page);state.putBoolean("help",pcHelpExpanded);state.putBoolean("accessHelp",accessHelpExpanded);state.putIntArray("scroll",scrollPositions);super.onSaveInstanceState(state);}
     @SuppressWarnings("deprecation") @Override public void onBackPressed(){if(page!=CONNECTION)showPage(CONNECTION);else super.onBackPressed();}
-    @Override public void onResume(){super.onResume();handler.post(refresh);}
-    @Override public void onPause(){handler.removeCallbacks(refresh);super.onPause();}
-    @Override public void onDestroy(){handler.removeCallbacksAndMessages(null);super.onDestroy();}
+    @Override public void onResume(){super.onResume();handler.post(refresh);if(wifiRescan!=null){handler.removeCallbacks(wifiRescan);handler.post(wifiRescan);}}
+    @Override public void onPause(){handler.removeCallbacks(refresh);if(wifiRescan!=null)handler.removeCallbacks(wifiRescan);super.onPause();}
+    @Override public void onDestroy(){if(wifiDialog!=null)wifiDialog.dismiss();handler.removeCallbacksAndMessages(null);super.onDestroy();}
 }

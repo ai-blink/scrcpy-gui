@@ -68,5 +68,7 @@ if __name__=='__main__':
  for perm in ['ACCESS_COARSE_LOCATION','ACCESS_FINE_LOCATION','ACCESS_BACKGROUND_LOCATION','POST_NOTIFICATIONS','WRITE_SECURE_SETTINGS']:
   adb('shell','pm','grant',PKG,'android.permission.'+perm)
  adb('shell','cmd','location','set-location-enabled','true')
- click('현재 Wi-Fi 등록',True);root=dump('register');print([(n.get('text'),n.get('bounds')) for n in root.iter('node') if n.get('text')],flush=True)
- click('등록');click('연결');adb('shell','settings','put','global','adb_wifi_enabled','0');click('자동 복구 시작');click('시작');time.sleep(3);dump('first-recovery');screenshot('first-recovery');print('ADB_WIFI_ENABLED',adb('shell','settings','get','global','adb_wifi_enabled'),flush=True)
+ click('Wi-Fi 고르기',True);time.sleep(2);root=dump('register');print([(n.get('text'),n.get('bounds')) for n in root.iter('node') if n.get('text')],flush=True)
+ # Live Wi-Fi list: nothing is pre-checked, so tick the connected network row, then save.
+ row=next(n for n in root.iter('node') if '\n연결됨' in (n.get('text') or ''));x1,y1,x2,y2=map(int,re.findall(r'\d+',row.get('bounds')));adb('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2));time.sleep(1)
+ click('저장');click('연결');adb('shell','settings','put','global','adb_wifi_enabled','0');click('자동 복구 시작');click('시작');time.sleep(3);dump('first-recovery');screenshot('first-recovery');print('ADB_WIFI_ENABLED',adb('shell','settings','get','global','adb_wifi_enabled'),flush=True)

@@ -78,7 +78,7 @@ public final class MacroActivity extends Activity {
     private void chooseTime(){String[] t=chosenTime.split(":");chooseTime(Integer.parseInt(t[0]),Integer.parseInt(t[1]));}
     private void chooseTime(int hour,int minute){timeEditor=new TimePickerDialog(this,(picker,hourOfDay,minutes)->{chosenTime=String.format(java.util.Locale.US,"%02d:%02d",hourOfDay,minutes);timeButton.setText("매일 "+chosenTime+"에 실행");},hour,minute,true);timeEditor.show();}
     private void chooseWifi(){
-        java.util.LinkedHashSet<String> ssids=new java.util.LinkedHashSet<>();String current=LinkState.ssid(this),trusted=LinkState.trusted(this);if(!current.isEmpty())ssids.add(current);if(!trusted.isEmpty())ssids.add(trusted);if(!chosenWifi.isEmpty())ssids.add(chosenWifi);
+        java.util.LinkedHashSet<String> ssids=new java.util.LinkedHashSet<>();String current=LinkState.ssid(this);if(!current.isEmpty())ssids.add(current);ssids.addAll(LinkState.trustedList(this));if(!chosenWifi.isEmpty())ssids.add(chosenWifi);
         java.util.ArrayList<String> values=new java.util.ArrayList<>();values.add("");values.addAll(ssids);java.util.ArrayList<String> labels=new java.util.ArrayList<>();labels.add("제한 없이 실행");for(String v:ssids)labels.add(v+(v.equals(current)?" · 현재 연결됨":" · 등록됨"));
         selectionDialog=new AlertDialog.Builder(this).setTitle(current.isEmpty()?"Wi-Fi 선택 · 이름이 없으면 위치 권한을 확인하세요":"어느 Wi-Fi에서 실행할까요?").setSingleChoiceItems(labels.toArray(new String[0]),values.indexOf(chosenWifi),(d,at)->{chosenWifi=values.get(at);wifiButton.setText(wifiLabel());d.dismiss();}).setNeutralButton("Wi-Fi 설정",(d,w)->startActivity(new Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))).setNegativeButton("취소",null).show();
     }

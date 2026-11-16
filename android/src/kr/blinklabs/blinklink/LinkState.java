@@ -32,7 +32,16 @@ public final class LinkState {
             return s;
         } catch (SecurityException e) { return ""; }
     }
+    /** Newline-separated SSID list; a pre-list single value stays valid as a one-item list. */
     public static String trusted(Context c) { return prefs(c).getString("trusted", ""); }
+    public static List<String> trustedList(Context c) {
+        List<String> out = new ArrayList<>();
+        for (String s : trusted(c).split("\n")) if (RecoveryPolicy.validSsid(s) && !out.contains(s)) out.add(s);
+        return out;
+    }
+    public static boolean isTrusted(Context c, String ssid) { return RecoveryPolicy.contains(trusted(c), ssid); }
+    public static void setTrusted(Context c, List<String> ssids) { prefs(c).edit().putString("trusted", String.join("\n", ssids)).apply(); }
+    public static String trustedLabel(Context c) { return String.join(", ", trustedList(c)); }
     public static boolean backgroundReady(Context c) {
         return c.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
             && c.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED;
