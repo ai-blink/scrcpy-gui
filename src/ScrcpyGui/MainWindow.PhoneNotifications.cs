@@ -170,10 +170,48 @@ public partial class MainWindow
         if (text.Length > 0) builder.AddText(text);
         builder.AddAttributionText(app);
         if (SaveToastIcon(Field(root, "icon")) is string icon) builder.AddAppLogoOverride(new Uri(icon), ToastGenericAppLogoCrop.Circle);
-        // The same phone notification updated again replaces its earlier toast instead of stacking.
-        var tag = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(serial + "\n" + Field(root, "key"))))[..32];
-        try { builder.Show(toast => { toast.Tag = tag; toast.Group = "phone"; }); }
+        // A repost with the same text replaces its toast; new text in the same notification (next chat message) stacks,
+        // like Phone Link. The phone already drops reposts whose content did not change.
+        var tag = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(serial + "\n" + Field(root, "key") + "\n" + title + "\n" + text)))[..32];
+        try
+        {
+            // Each phone app gets its own Windows sender, so Windows' "too many banners, paused for 3 minutes"
+            // throttle and the per-app notification settings apply to that app only, not to every phone app.
+            if (PhoneAppSender(package, app) is string aumid)
+            {
+                var toast = new Windows.UI.Notifications.ToastNotification(builder.GetToastContent().GetXml()) { Tag = tag, Group = "phone" };
+                Windows.UI.Notifications.ToastNotificationManager.CreateToastNotifier(aumid).Show(toast);
+            }
+            else builder.Show(toast => { toast.Tag = tag; toast.Group = "phone"; });
+        }
         catch (Exception ex) { ReportNotifyState("윈도우 알림 표시 실패 · " + ex.Message); }
+    }
+
+    private readonly HashSet<string> _phoneSenders = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Registers (once per run) a per-app sender id that reuses this GUI's toast click handler (CustomActivator),
+    /// so clicks still reach <see cref="OnPhoneToastActivated"/>. Null when the main registration is missing.
+    /// </summary>
+    private string? PhoneAppSender(string package, string app)
+    {
+        var aumid = "ScrcpyGui.Phone." + package;
+        if (aumid.Length > 120) return null;
+        if (_phoneSenders.Contains(aumid)) return aumid;
+        try
+        {
+            using var root = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\AppUserModelId");
+            var main = Environment.ProcessPath?.Replace('\\', '/');
+            using var mainKey = main is null ? null : root?.OpenSubKey(main);
+            if (mainKey?.GetValue("CustomActivator") is not string activator) return null;
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Classes\AppUserModelId\" + aumid);
+            key.SetValue("DisplayName", app + " (휴대폰)");
+            key.SetValue("CustomActivator", activator);
+            if (mainKey.GetValue("IconUri") is string icon) key.SetValue("IconUri", icon);
+            _phoneSenders.Add(aumid);
+            return aumid;
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException) { return null; }
     }
 
     private static string? SaveToastIcon(string base64)

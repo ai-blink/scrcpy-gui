@@ -533,8 +533,16 @@ internal static partial class Program
             darkTabs.Items.Add(darkTab); owner.Content = darkTabs;
             darkTabs.Measure(new Size(720, 950)); darkTabs.Arrange(new Rect(0, 0, 720, 950)); darkTabs.UpdateLayout();
             var body = (System.Windows.Controls.StackPanel)((System.Windows.Controls.ScrollViewer)((System.Windows.Controls.Grid)controls.Page).Children[0]).Content;
-            var pageTitle = (System.Windows.Controls.TextBlock)body.Children[0];
-            Check(pageTitle.Foreground.ToString() == Brushes.Gainsboro.ToString(), "page text stays readable when TabItem inherits black foreground");
+            // The page now opens with the target-selection card; check the first text inside it, whatever wraps it.
+            static System.Windows.Controls.TextBlock? FirstText(DependencyObject node)
+            {
+                foreach (var child in LogicalTreeHelper.GetChildren(node).OfType<DependencyObject>())
+                    if (child is System.Windows.Controls.TextBlock text) return text;
+                    else if (FirstText(child) is { } found) return found;
+                return null;
+            }
+            var pageText = FirstText(body);
+            Check(pageText is not null && pageText.Foreground.ToString() == Brushes.Gainsboro.ToString(), "page text stays readable when TabItem inherits black foreground");
             darkTab.Content = null; darkTabs.Items.Clear(); owner.Content = null;
             Check(!controls.KeepRunningWhenSettingsClosed, "unattached settings window can exit normally");
             owner.WindowState = WindowState.Minimized;
