@@ -15,7 +15,7 @@ internal static class Program
   try
   {
    if(args.Length==3&&args[0]=="--emulator")return await Emulator(args[1],args[2]);
-   var apk=Path.GetFullPath("app/android/BlinkLink-0.4.0-debug.apk");
+   var apk=Path.GetFullPath("app/android/BlinkLink-0.5.0-debug.apk");
    Check(BlinkLinkProvisioner.HasSecureSettingsPermission(Granted,"0"),"global development grant recognized");
    Check(!BlinkLinkProvisioner.HasSecureSettingsPermission(Granted.Replace("granted=true","granted=false"),"0"),"denied permission rejected");
    var perUser=Dump("    User 0: installed=true\n      android.permission.WRITE_SECURE_SETTINGS: granted=true\n    User 10: installed=true\n      android.permission.WRITE_SECURE_SETTINGS: granted=false\n");
@@ -46,7 +46,7 @@ internal static class Program
    using var cancel=new CancellationTokenSource();calls.Clear();var cancelled=new BlinkLinkProvisioner(async(a,t,d)=>{var r=await Fake(a,t,d);if(a.Contains("install"))cancel.Cancel();return r;});
    try{await cancelled.PrepareAsync(Serial,apk,null,cancel.Token);throw new Exception("cancellation ignored");}catch(OperationCanceledException){}Check(!calls.Any(a=>a.Contains("grant")),"cancelled install does not proceed to grant");
    var bad=Path.GetTempFileName();try{int before=calls.Count;try{await sut.PrepareAsync(Serial,bad,null,CancellationToken.None);throw new Exception("wrong APK accepted");}catch(InvalidOperationException){}Check(calls.Count==before,"wrong APK hash rejected before device commands");}finally{File.Delete(bad);}
-   var assembly=Assembly.LoadFrom(Path.GetFullPath("src/ScrcpyGui/bin/Release/net8.0-windows/win-x64/ScrcpyGui.dll"));using var embedded=assembly.GetManifestResourceStream("BlinkLink.apk");Check(embedded!=null&&Convert.ToHexString(SHA256.HashData(embedded)).Equals(BlinkLinkProvisioner.ApkSha256,StringComparison.OrdinalIgnoreCase),"WPF application embeds verified APK");
+   var assembly=Assembly.LoadFrom(Path.GetFullPath("src/ScrcpyGui/bin/Release/net8.0-windows10.0.17763.0/win-x64/ScrcpyGui.dll"));using var embedded=assembly.GetManifestResourceStream("BlinkLink.apk");Check(embedded!=null&&Convert.ToHexString(SHA256.HashData(embedded)).Equals(BlinkLinkProvisioner.ApkSha256,StringComparison.OrdinalIgnoreCase),"WPF application embeds verified APK");
    Console.WriteLine("PASS "+count+" setup assertions");return 0;
   }
   catch(Exception ex){Console.Error.WriteLine(ex);return 1;}

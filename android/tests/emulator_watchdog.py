@@ -20,7 +20,7 @@ def pid():
  return subprocess.run([ADB,'-s',SER,'shell','pidof',PKG],capture_output=True,text=True).stdout.strip()
 
 validate_target(require_package=False)
-apk=ROOT/'app'/'android'/'BlinkLink-0.4.0-debug.apk'
+apk=ROOT/'app'/'android'/'BlinkLink-0.5.0-debug.apk'
 assert raw('install','-r',str(apk)).splitlines()[-1]=='Success'
 for perm in ['ACCESS_COARSE_LOCATION','ACCESS_FINE_LOCATION','ACCESS_BACKGROUND_LOCATION','POST_NOTIFICATIONS','WRITE_SECURE_SETTINGS']:
  adb('shell','pm','grant',PKG,'android.permission.'+perm)

@@ -1,0 +1,34 @@
+package kr.blinklabs.blinklink;
+
+import android.app.Activity;
+import android.app.ActivityOptions;
+import android.app.PendingIntent;
+import android.os.Build;
+
+/**
+ * Invisible trampoline started on the PC app window's display. Android blocks background services
+ * from opening another app's notification screen, but allows it from a visible activity.
+ */
+public final class OpenActivity extends Activity {
+    static final String TARGET = "target";
+    private boolean sent;
+
+    @SuppressWarnings("deprecation")
+    @Override protected void onResume() {
+        super.onResume();
+        if (sent) return;
+        sent = true;
+        getWindow().getDecorView().post(() -> {
+            PendingIntent target = getIntent().getParcelableExtra(TARGET);
+            if (target != null) {
+                ActivityOptions options = ActivityOptions.makeBasic().setLaunchDisplayId(getDisplay().getDisplayId());
+                if (Build.VERSION.SDK_INT >= 36) options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS);
+                else if (Build.VERSION.SDK_INT >= 34) options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                try { target.send(this, 0, null, null, null, null, options.toBundle()); }
+                catch (PendingIntent.CanceledException | RuntimeException e) { LinkState.log(this, "알림 화면 열기 실패 · " + e.getMessage()); }
+            }
+            finish();
+            overridePendingTransition(0, 0);
+        });
+    }
+}

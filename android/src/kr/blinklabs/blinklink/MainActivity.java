@@ -137,6 +137,8 @@ public final class MainActivity extends Activity {
         sectionBreak();text(content,"추가 설정",20,true,colors.ink);gap(content,8);
         text(content,"감시가 자주 중단되면 삼성 앱 배터리 설정의 '제한 없음'을 확인하세요.",16,false,colors.muted);
         gap(content,12);button(content,"앱 권한 · 배터리 설정",false,false,this::openAppSettings);
+        gap(content,16);text(content,"PC의 scrcpy-gui에서 '휴대폰 알림 받기'를 켜면 이 휴대폰의 알림을 윈도우 알림으로 보여줍니다. 직접 켜려면 알림 접근에서 Blink Link를 허용하세요.",16,false,colors.muted);
+        gap(content,12);button(content,"알림 접근 설정 열기",false,false,()->open(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         gap(content,16);button(content,"디버깅 끄고 복구 정지",false,true,()->new AlertDialog.Builder(this).setTitle("PC 연결을 종료할까요?").setMessage("무선 디버깅과 자동 복구를 끕니다. 연결 중인 PC 화면이 끊길 수 있습니다.").setPositiveButton("끄기",(d,w)->{LinkState.pause(this);LinkState.setAdb(this,false);say("자동 복구를 멈추고 디버깅 끄기를 요청했어요.");update();}).setNegativeButton("취소",null).show());
     }
     private TextView step(String title){text(content,title,20,true,colors.ink);gap(content,4);TextView status=text(content,"",14,true,colors.muted);gap(content,8);return status;}

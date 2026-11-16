@@ -66,6 +66,7 @@ public partial class MainWindow : Window
         ReloadPresetList(_selectedPresetName);
         ResolveExecutables();
         InitializeBlinkLinkSetup();
+        InitializePhoneNotifications();
         NavigationList.SelectedIndex = 0;
         OptionTabs.SelectedIndex = 0;
         UpdatePreview();
@@ -250,8 +251,7 @@ public partial class MainWindow : Window
     private void OptionTabs_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_updating || e.Source != OptionTabs || OptionTabs.SelectedItem is not TabItem tab) return;
-        var remotePage = Equals(tab.Header, "조작판");
-        MirrorHeader.Visibility = remotePage ? Visibility.Collapsed : Visibility.Visible;
+        MirrorHeader.Visibility = Visibility.Visible;
         MirrorFooter.Visibility = Visibility.Visible;
         foreach (var item in NavigationList.Items.OfType<ListBoxItem>())
         {

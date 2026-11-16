@@ -56,13 +56,11 @@ internal sealed partial class RemoteControls : IDisposable
         _ownerRestoreState = owner.WindowState == WindowState.Minimized ? WindowState.Normal : owner.WindowState;
         try { _settings = RemoteSettings.Load(_path); }
         catch (Exception ex) { _settings = new(); _loadError = ex.Message; }
-        var page = new StackPanel { Margin = new Thickness(20) };
-        page.Children.Add(new TextBlock { Text = "휴대폰 외부 조작판", FontSize = 24, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 14) });
-        page.Children.Add(new TextBlock { Text = "미러링 창이 하나면 자동으로 연결 대상을 고릅니다. 새 창 실행 시 조작판도 함께 켜집니다.", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightSlateGray, Margin = new Thickness(0, 0, 0, 12) });
+        var page = new StackPanel { Margin = new Thickness(18) };
         var targetSection = new StackPanel();
-        page.Children.Add(new Border { Child = targetSection, Padding = new Thickness(12), Background = new SolidColorBrush(Color.FromRgb(22, 22, 24)), CornerRadius = new CornerRadius(10), Margin = new Thickness(0, 0, 0, 12) });
+        page.Children.Add(new Border { Child = targetSection, Padding = new Thickness(12, 4, 6, 4), Background = new SolidColorBrush(Color.FromRgb(22, 22, 24)), CornerRadius = new CornerRadius(10), Margin = new Thickness(0, 0, 0, 12) });
         var targetRow = new DockPanel();
-        var refreshActions = new WrapPanel(); AddButton(refreshActions, "다시 찾기", async () => await Refresh());
+        var refreshActions = new WrapPanel(); AddButton(refreshActions, "다시 찾기", async () => await Refresh()); ((FrameworkElement)refreshActions.Children[0]).Margin = new Thickness(0);
         DockPanel.SetDock(refreshActions, Dock.Right); targetRow.Children.Add(refreshActions);
         _targetStatus.Margin = new Thickness(0, 0, 8, 0); _targetStatus.VerticalAlignment = VerticalAlignment.Center;
         targetRow.Children.Add(_targetStatus); targetSection.Children.Add(targetRow);
@@ -470,11 +468,11 @@ internal sealed partial class RemoteControls : IDisposable
     {
         if (_disposed) return;
         var view = _relay.View;
-        _runState.Text = _covered ? "휴대폰 창이 가려져 버튼을 숨겼습니다." : _enabled ? $"● 사용 중 · {(_settings.Activation == "dwell" ? $"{_settings.DwellMs / 1000.0:0.##}초 바라보면 실행" : "클릭하면 실행")}" : _target is null ? "먼저 휴대폰 창을 골라 주세요." : "Ⅱ 일시 정지 · ‘사용하기’를 누르면 버튼이 작동합니다.";
+        _runState.Text = _covered ? "휴대폰 창이 가려져 버튼을 숨겼습니다. 앞으로 가져오면 다시 나타납니다." : _enabled ? $"● 사용 중 · {(_settings.Activation == "dwell" ? $"{_settings.DwellMs / 1000.0:0.##}초 바라보면 실행" : "클릭하면 실행")}" : _target is null ? "먼저 휴대폰 창을 골라 주세요." : "Ⅱ 일시 정지 · ‘사용하기’를 누르면 버튼이 작동합니다.";
         _runState.Foreground = _covered ? Brushes.LightSteelBlue : _enabled ? Brushes.LightGreen : _target is null ? Brushes.LightSteelBlue : Brushes.Salmon;
         if (_covered) _pointer.Hide(); else _pointer.Update(view);
         _status.Text = _loadError.Length != 0 ? _loadError : _notice.Length != 0 ? _notice : _layoutMessage.Length != 0 ? _layoutMessage : view.Status;
-        _noticeBanner.Text = _loadError.Length != 0 ? _loadError : _notice.Length != 0 ? _notice : _layoutMessage;
+        _noticeBanner.Text = _loadError.Length != 0 ? _loadError : _notice.Length != 0 ? _notice : _covered ? "" : _layoutMessage; // The covered state is already the run-state line.
         _noticeBanner.Visibility = _noticeBanner.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (_notice.Length == 0 && _layoutMessage.Length == 0 && view.Completed > 0)
             _status.Text += $"\n최근 최대 50회 · 중앙 {view.MedianMs}ms · 최대 {view.MaxMs}ms";
