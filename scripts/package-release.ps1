@@ -10,7 +10,7 @@ if($project.Project.PropertyGroup.Version -ne $Version){throw 'Project version d
 if($LASTEXITCODE -ne 0){throw 'Publish failed'}
 $exe=Join-Path $root 'app\ScrcpyGui.exe';$apk=Join-Path $root 'app\android\BlinkLink-0.5.0-debug.apk'
 if((Get-Item -LiteralPath $exe).VersionInfo.FileVersion -ne "$Version.0"){throw 'Published executable version mismatch'}
-if((Get-FileHash -LiteralPath $apk).Hash.ToLowerInvariant() -ne '608c2ada500413e982b54e1925b76e7290c81111585522a52dd6e1293a00e8a7'){throw 'APK hash differs from verified 0.5.0 build'}
+if((Get-FileHash -LiteralPath $apk).Hash.ToLowerInvariant() -ne '16a868d880db589ad0449b20d421fda7cb7623966660e1b86ce5ff706f568fbc'){throw 'APK hash differs from verified 0.5.0 build'}
 $stage=Join-Path $OutputDirectory ('package-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $stage,(Join-Path $stage 'android')|Out-Null
 Copy-Item -LiteralPath $exe -Destination (Join-Path $stage 'ScrcpyGui.exe')
 Copy-Item -LiteralPath $apk -Destination (Join-Path $stage 'android\BlinkLink-0.5.0-debug.apk')

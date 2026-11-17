@@ -39,6 +39,11 @@ public final class NotifyListener extends NotificationListenerService {
     private final Map<String, String> lastContent = new LinkedHashMap<String, String>(64, 0.75f, true) {
         @Override protected boolean removeEldestEntry(Map.Entry<String, String> eldest) { return size() > 200; }
     };
+    // The screen each forwarded notification opens. People often read the message on the phone first, which
+    // removes the notification; the PC toast should still open that chat, not the app's first screen.
+    private final Map<String, android.app.PendingIntent> targets = new LinkedHashMap<String, android.app.PendingIntent>(64, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, android.app.PendingIntent> eldest) { return size() > 200; }
+    };
     private LocalServerSocket server;
     private ScheduledExecutorService worker;
     private volatile boolean stopping;
@@ -87,6 +92,17 @@ public final class NotifyListener extends NotificationListenerService {
         clients.clear();
         if (worker != null) worker.shutdownNow();
         worker = null;
+        // Notification access was withdrawn: do not keep other apps' screens around.
+        synchronized (targets) { targets.clear(); }
+        synchronized (lastContent) { lastContent.clear(); }
+    }
+
+    // OpenActivity reports here whether the notification's screen actually started.
+    private static final Map<String, java.util.concurrent.CompletableFuture<String>> pendingOpens = new java.util.concurrent.ConcurrentHashMap<>();
+
+    static void opened(String request, String error) {
+        java.util.concurrent.CompletableFuture<String> result = request == null ? null : pendingOpens.remove(request);
+        if (result != null) result.complete(error);
     }
 
     /** Reads PC commands: {"type":"open","key":...,"display":N} opens that notification's own target screen. */
@@ -113,17 +129,34 @@ public final class NotifyListener extends NotificationListenerService {
         if (key.isEmpty() || display < 0) return "잘못된 요청";
         StatusBarNotification[] found;
         try { found = getActiveNotifications(new String[]{key}); } catch (RuntimeException e) { return "알림 조회 실패"; }
-        if (found == null || found.length == 0) return "휴대폰에서 이미 지운 알림";
-        Notification n = found[0].getNotification();
-        if (n.contentIntent == null) return "열 화면이 없는 알림";
+        Notification n = found == null || found.length == 0 ? null : found[0].getNotification();
+        // A live notification decides by itself; the remembered screen is only for one already removed.
+        android.app.PendingIntent target;
+        if (n != null) target = n.contentIntent;
+        else synchronized (targets) { target = targets.get(key); }
+        if (target == null) return n == null ? "휴대폰에서 이미 지운 알림" : "열 화면이 없는 알림";
         // The overlay app-op (granted by the PC) lets this service start its own invisible activity there;
         // that visible activity then runs the notification's action, which Android allows.
+        String request = java.util.UUID.randomUUID().toString();
+        java.util.concurrent.CompletableFuture<String> result = new java.util.concurrent.CompletableFuture<>();
+        pendingOpens.put(request, result);
         android.content.Intent trampoline = new android.content.Intent(this, OpenActivity.class)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_MULTIPLE_TASK | android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            .putExtra(OpenActivity.TARGET, n.contentIntent);
+            .putExtra(OpenActivity.TARGET, target)
+            .putExtra(OpenActivity.REQUEST, request);
         try { startActivity(trampoline, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(display).toBundle()); }
-        catch (RuntimeException e) { return "실행 거부 · " + e.getMessage(); }
-        if ((n.flags & Notification.FLAG_AUTO_CANCEL) != 0) cancelNotification(key);
+        catch (RuntimeException e) { pendingOpens.remove(request); return "실행 거부 · " + e.getMessage(); }
+        String error;
+        try { error = result.get(5, TimeUnit.SECONDS); }
+        catch (java.util.concurrent.TimeoutException e) { error = "휴대폰이 화면 열기에 응답하지 않음"; }
+        catch (InterruptedException | java.util.concurrent.ExecutionException e) { error = "화면 열기 확인 실패"; }
+        finally { pendingOpens.remove(request); }
+        if (!error.isEmpty()) {
+            // A used or cancelled screen will not work next time either.
+            if (n == null) synchronized (targets) { targets.remove(key); }
+            return error;
+        }
+        if (n != null && (n.flags & Notification.FLAG_AUTO_CANCEL) != 0) cancelNotification(key);
         return "";
     }
 
@@ -161,6 +194,12 @@ public final class NotifyListener extends NotificationListenerService {
 
     private String describe(StatusBarNotification sbn) {
         Notification n = sbn.getNotification();
+        // Keep the newest screen even when the text did not change (apps may recreate the intent),
+        // and forget it when the update no longer opens anything.
+        synchronized (targets) {
+            if (n.contentIntent != null) targets.put(sbn.getKey(), n.contentIntent);
+            else targets.remove(sbn.getKey());
+        }
         Bundle extras = n.extras;
         String title = text(extras.getCharSequence(Notification.EXTRA_TITLE));
         String body = text(extras.getCharSequence(Notification.EXTRA_BIG_TEXT));
