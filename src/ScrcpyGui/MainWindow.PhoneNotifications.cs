@@ -161,15 +161,24 @@ public partial class MainWindow
     {
         var package = Field(root, "pkg");
         if (!SafePackage.IsMatch(package)) return;
+        if (IsPhoneAppMuted(package)) return;
         var app = Field(root, "app"); if (app.Length == 0) app = package;
         var title = Field(root, "title");
         var text = Field(root, "text");
+        // Same layout as Windows Phone Link: app name, title, text, and the app icon uncropped (square).
         var builder = new ToastContentBuilder()
             .AddArgument("action", "open").AddArgument("serial", serial).AddArgument("pkg", package).AddArgument("app", app).AddArgument("key", Field(root, "key"))
-            .AddText(title.Length > 0 ? title : app);
+            .AddText(app);
+        if (title.Length > 0) builder.AddText(title);
         if (text.Length > 0) builder.AddText(text);
-        builder.AddAttributionText(app);
-        if (SaveToastIcon(Field(root, "icon")) is string icon) builder.AddAppLogoOverride(new Uri(icon), ToastGenericAppLogoCrop.Circle);
+        if (SaveToastIcon(Field(root, "icon")) is string icon) builder.AddAppLogoOverride(new Uri(icon), ToastGenericAppLogoCrop.None);
+        var content = builder.GetToastContent();
+        // Right-click menu, like Phone Link: mute this phone app for a while.
+        var actions = new ToastActionsCustom();
+        foreach (var (hours, label) in PhoneMuteChoices)
+            actions.ContextMenuItems.Add(new ToastContextMenuItem(label,
+                new ToastArguments().Add("action", "mute").Add("pkg", package).Add("app", app).Add("hours", hours).ToString()));
+        content.Actions = actions;
         // A repost with the same text replaces its toast; new text in the same notification (next chat message) stacks,
         // like Phone Link. The phone already drops reposts whose content did not change.
         var tag = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(serial + "\n" + Field(root, "key") + "\n" + title + "\n" + text)))[..32];
@@ -179,12 +188,33 @@ public partial class MainWindow
             // throttle and the per-app notification settings apply to that app only, not to every phone app.
             if (PhoneAppSender(package, app) is string aumid)
             {
-                var toast = new Windows.UI.Notifications.ToastNotification(builder.GetToastContent().GetXml()) { Tag = tag, Group = "phone" };
+                var toast = new Windows.UI.Notifications.ToastNotification(content.GetXml()) { Tag = tag, Group = "phone" };
                 Windows.UI.Notifications.ToastNotificationManager.CreateToastNotifier(aumid).Show(toast);
             }
-            else builder.Show(toast => { toast.Tag = tag; toast.Group = "phone"; });
+            else ToastNotificationManagerCompat.CreateToastNotifier().Show(new Windows.UI.Notifications.ToastNotification(content.GetXml()) { Tag = tag, Group = "phone" });
         }
         catch (Exception ex) { ReportNotifyState("윈도우 알림 표시 실패 · " + ex.Message); }
+    }
+
+    private static readonly (int Hours, string Label)[] PhoneMuteChoices =
+        [(1, "1시간 동안 이 앱 알림 끄기"), (8, "8시간 동안 이 앱 알림 끄기"), (24, "1일 동안 이 앱 알림 끄기")];
+
+    /// <summary>Mutes are kept per phone app as an expiry time (Unix seconds) in the config, so they survive a restart.</summary>
+    private bool IsPhoneAppMuted(string package) =>
+        (_config["phoneMutes"] as System.Text.Json.Nodes.JsonObject)?[package] is System.Text.Json.Nodes.JsonValue until
+        && until.TryGetValue<long>(out var seconds) && DateTimeOffset.UtcNow.ToUnixTimeSeconds() < seconds;
+
+    private void MutePhoneApp(string package, string app, int hours)
+    {
+        if (!SafePackage.IsMatch(package) || hours is < 1 or > 24) return;
+        if (_config["phoneMutes"] is not System.Text.Json.Nodes.JsonObject mutes) _config["phoneMutes"] = mutes = new System.Text.Json.Nodes.JsonObject();
+        var now = DateTimeOffset.UtcNow;
+        // Drop expired entries so the config does not grow with every app ever muted.
+        foreach (var expired in mutes.Where(p => p.Value is not System.Text.Json.Nodes.JsonValue v || !v.TryGetValue<long>(out var s) || s <= now.ToUnixTimeSeconds()).Select(p => p.Key).ToList())
+            mutes.Remove(expired);
+        mutes[package] = now.AddHours(hours).ToUnixTimeSeconds();
+        SaveObject(ConfigPath, _config);
+        SetStatus(app + " 휴대폰 알림을 " + (hours == 24 ? "1일" : hours + "시간") + " 동안 끕니다 (" + now.AddHours(hours).ToLocalTime().ToString("M/d HH:mm") + "까지).");
     }
 
     private readonly HashSet<string> _phoneSenders = new(StringComparer.Ordinal);
@@ -233,7 +263,14 @@ public partial class MainWindow
     {
         ToastArguments args;
         try { args = ToastArguments.Parse(argument); } catch { return; }
-        if (!args.TryGetValue("action", out var action) || action != "open") return;
+        if (!args.TryGetValue("action", out var action)) return;
+        if (action == "mute")
+        {
+            if (args.TryGetValue("pkg", out var muted) && args.TryGetValue("hours", out var hoursText) && int.TryParse(hoursText, out var hours))
+                MutePhoneApp(muted, args.TryGetValue("app", out var mutedApp) ? mutedApp : muted, hours);
+            return;
+        }
+        if (action != "open") return;
         if (!args.TryGetValue("serial", out var serial) || !args.TryGetValue("pkg", out var package)) return;
         OpenPhoneAppWindow(serial, package, args.TryGetValue("app", out var app) ? app : package, args.TryGetValue("key", out var key) ? key : "");
     }
