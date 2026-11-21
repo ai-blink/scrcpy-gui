@@ -497,28 +497,54 @@ public partial class MainWindow : Window
 
     // 첫 실행이면 시작 조회가 adb 서버를 막 띄운 직후라 답이 서버 기동 9ms 만에 온다. 무선 폰은 서버 기동 뒤
     // 0.45~0.7초(adb.log 실측)에야 mDNS로 붙으므로 한 번 묻고 끝내면 "기기 없음"으로 굳고 앱을 껐다 켜야만 보인다.
-    // 잠시 더 지켜보되 사용자가 새로고침·기기 찾기를 누르면 그쪽에 맡기고 물러난다. 연결 작업 게이트는 잡지 않는다.
+    // 그런데 PC 재부팅 직후엔 adb의 첫 mDNS 검색에 폰이 답하지 않아 다음 검색(서버 기동 약 120초 뒤, 2026-11-16·17·21
+    // adb.log 실측) 또는 그보다 늦게야 붙는 때가 있다. 그래서 처음 몇 초는 초읽기로 보여 주고, 그 뒤에도 폰이 붙을 때까지
+    // 3초마다 조용히 확인한다. 사용자의 새로고침·기기 찾기가 진행 중이면 그 회차만 건너뛴다. 연결 작업 게이트는 잡지 않는다.
+    // 15초가 지나도 붙은 기기가 하나도 없으면 adb 서버를 딱 한 번 다시 띄워 mDNS 검색을 처음부터 다시 하게 한다.
+    // 화면이 꺼진(Dozing) 폰도 새 서버엔 0.6초 만에 답했으므로(2026-11-21 실측) 2분 주기를 기다릴 필요가 없다.
+    // 기기가 없으면 미러링·알림 연결도 있을 수 없어 끊을 것이 없다(옛 '기기 찾기' 재시작은 미러링 중에도 돌아 확인 창이 필요했다).
     private async Task WaitForPhoneAfterStartupAsync(int seconds)
     {
         var deadline = DateTime.UtcNow.AddSeconds(seconds);
-        try
+        var restartAt = DateTime.UtcNow.AddSeconds(15);
+        var restarted = false;
+        var countdown = true;
+        while (!HasOnlineDevice())
         {
-            while (DateTime.UtcNow < deadline)
+            try
             {
-                SetStatus($"폰이 스스로 붙기를 기다립니다… {Math.Ceiling((deadline - DateTime.UtcNow).TotalSeconds):0}초");
-                await Task.Delay(700, _lifetime.Token);
-                if (_refreshing || _connectionCancellation is not null) return;
+                if (countdown && DateTime.UtcNow < deadline)
+                {
+                    SetStatus($"폰이 스스로 붙기를 기다립니다… {Math.Ceiling((deadline - DateTime.UtcNow).TotalSeconds):0}초");
+                }
+                else if (countdown)
+                {
+                    countdown = false;
+                    SetStatus("연결된 기기 없음 — 폰이 붙으면 자동으로 표시합니다(기기 찾기를 눌러도 됩니다).");
+                }
+                await Task.Delay(countdown ? 700 : 3000, _lifetime.Token);
+                if (_refreshing || _connectionCancellation is not null) { countdown = false; continue; }
                 var devices = await GetAdbDevicesAsync();
-                if (_refreshing || _connectionCancellation is not null) return;
-                if (!devices.Any(device => device.State == "device")) continue;
+                if (_refreshing || _connectionCancellation is not null) { countdown = false; continue; }
+                if (!devices.Any(device => device.State == "device"))
+                {
+                    if (!restarted && DateTime.UtcNow >= restartAt && devices.Count == 0 && _sessionProcess is not { HasExited: false })
+                    {
+                        restarted = true;
+                        SetStatus("폰 검색을 처음부터 다시 합니다(adb 다시 시작)…");
+                        await RunAdbAsync(["kill-server"], _lifetime.Token);
+                        await RunAdbAsync(["start-server"], _lifetime.Token, TimeSpan.FromSeconds(20));
+                        SetStatus("연결된 기기 없음 — 폰이 붙으면 자동으로 표시합니다(기기 찾기를 눌러도 됩니다).");
+                    }
+                    continue;
+                }
                 PopulateDevices(devices);
                 if (_backgroundServices) await SyncPhonePreferencesAsync();
                 return;
             }
-            SetStatus("연결된 기기 없음 — 기기 찾기를 눌러보세요.");
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex) { countdown = false; SetStatus("기기 확인 실패 · " + ex.Message); }
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { SetStatus("기기 확인 실패 · " + ex.Message); }
     }
 
     // 실행 직전의 기기 목록은 옛것일 수 있다(첫 실행 직후 폰이 막 붙는 중, 깨어난 폰이 다시 붙은 뒤 등).
