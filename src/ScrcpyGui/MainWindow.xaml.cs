@@ -74,6 +74,7 @@ public partial class MainWindow : Window
         Loaded += async (_, _) =>
         {
             UpdatePreview();
+            await LoadClientAudioSourcesAsync();
             if (!_backgroundServices) return;
             await _remoteControls.Refresh();
             if (_remoteControls.HasSelectedTarget)
@@ -980,6 +981,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        var useMicBuild = UsesClientAudio(arguments);
+        if (useMicBuild && _micScrcpyPath is null)
+        {
+            SetStatus("PC 마이크 → 폰은 수정판 scrcpy가 필요합니다. C:\\app\\scrcpy-mic 폴더를 확인하세요.");
+            return;
+        }
+        var executable = useMicBuild ? _micScrcpyPath! : _scrcpyPath;
+
         SaveCurrentValues();
         var started = false;
         RunButton.IsEnabled = false;
@@ -987,11 +996,13 @@ public partial class MainWindow : Window
         {
             var start = new ProcessStartInfo
             {
-                FileName = _scrcpyPath,
-                WorkingDirectory = Path.GetDirectoryName(_scrcpyPath)!,
+                FileName = executable,
+                WorkingDirectory = Path.GetDirectoryName(executable)!,
                 UseShellExecute = false,
                 CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true,
             };
+            // 수정판 폴더의 adb는 버전이 달라 공용 adb 서버를 재시작시키므로, 앱이 쓰는 adb를 그대로 쓰게 한다.
+            if (useMicBuild && _adbPath is not null) start.Environment["ADB"] = _adbPath;
             foreach (var argument in arguments) start.ArgumentList.Add(argument);
             var process = Process.Start(start) ?? throw new InvalidOperationException("프로세스를 시작하지 못했습니다.");
             _sessionProcess = process;
@@ -1374,6 +1385,7 @@ public partial class MainWindow : Window
         new("소리", "audio-bit-rate", "소리 비트레이트", OptionKind.Text, "--audio-bit-rate={0}", Hint: "예: 128K"),
         new("소리", "audio-source", "소리 원본", OptionKind.Combo, "--audio-source={0}", DefaultChoice, Items: [DefaultChoice, "output", "playback", "mic"]),
         new("소리", "audio-dup", "폰에서도 같이 재생", OptionKind.Check, "--audio-dup"),
+        new("소리", "client-audio-source", "PC 마이크 → 폰", OptionKind.EditableCombo, "--client-audio-source={0}", DefaultChoice, Items: [DefaultChoice], Hint: "고른 PC 녹음 장치 소리를 폰 마이크 대신 넣습니다. Android 13 이상, 수정판 scrcpy(C:\\app\\scrcpy-mic*)로 실행합니다."),
         new("녹화", "record", "녹화 파일", OptionKind.Text, "--record={0}", Hint: "예: C:\\rec\\phone.mp4"),
         new("녹화", "record-format", "녹화 형식", OptionKind.Combo, "--record-format={0}", DefaultChoice, Items: [DefaultChoice, "mp4", "mkv", "m4a", "mka", "opus", "aac", "flac", "wav"]),
         new("녹화", "time-limit", "자동 종료", OptionKind.Text, "--time-limit={0}", Hint: "초 단위. 예: 600"),
