@@ -85,7 +85,7 @@ scrcpy와 adb 자체는 포함하지 않습니다. [scrcpy 공식 Windows 배포
 3. `C:\app` 아래의 `scrcpy*\scrcpy.exe`와 기본 adb 경로
 
 유효한 수동 경로가 없고 여러 자동 탐지 후보가 있으면 경로 이름의 버전 정보를 기준으로 후보를 고릅니다. 찾지 못하면 앱은 계속 열려 있고,
-왼쪽 `설정` 탭의 **찾아보기**에서 `scrcpy.exe`와 `adb.exe` 위치를 직접 지정할 수 있습니다.
+왼쪽 `설정` 탭의 **공식 최신 버전 설치**를 누르면 공식 scrcpy(adb 포함)를 `C:pp`에 내려받아 설치하고 경로를 저장합니다(SHA-256 검증, 기존 설치는 덮어쓰지 않음). 직접 설치했다면 **찾아보기**에서 `scrcpy.exe`와 `adb.exe` 위치를 지정할 수 있습니다.
 지정한 경로는 `scrcpy-gui-config.json`에 저장됩니다.
 
 ---
@@ -102,7 +102,7 @@ USB 케이블 없이 쓰려면 최초 1회 페어링이 필요합니다. **이 �
 ![Wi-Fi 페어링 코드 팝업 — 6자리 코드는 가리고 사설 IP:포트는 그대로 표시](assets/wireless-pairing-code-popup-redacted.png)
 ![scrcpy 설정 GUI 상단바 — 무선 페어링 버튼 위치](assets/scrcpy-gui-wireless-pairing-button.png)
 
-scrcpy 공식 ZIP을 설치한 뒤에는 `설정` 탭에서 `scrcpy.exe` 또는 `adb.exe`를 지정할 수 있습니다.
+scrcpy 공식 ZIP은 `설정` 탭의 **공식 최신 버전 설치**로 받거나, 직접 설치한 뒤 `scrcpy.exe` 또는 `adb.exe`를 지정할 수 있습니다.
 무선 디버깅 연결에는 별도 USB 연결이 필요하지 않습니다.
 
 > ⚠️ `adb tcpip 5555` 방식은 쓰지 마세요. **전환 자체에 USB 연결이 필요하고**, Wi-Fi가 끊기거나

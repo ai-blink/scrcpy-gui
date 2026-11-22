@@ -1,7 +1,10 @@
 # 변경 기록
 
-## 개발 중 — PC0.5.1 / Android0.5.0
+## v0.5.1 — 2026-11-22
 
+PC 0.5.1 / Android(Blink Link) 0.5.0
+
+- 설정 탭 scrcpy.exe 줄에 **공식 최신 버전 설치** 버튼 추가. adb가 자동으로 설치되지 않던 문제(자동 설치는 옛 PowerShell 판에만 있고 WPF 앱은 찾기만 했음) 해결. Genymobile 공식 GitHub 최신 정식 릴리스의 `scrcpy-win64-<버전>.zip`만 받고, 공식 SHA-256과 압축 경로(Zip Slip)를 검증한 뒤 `C:pp\scrcpy-win64-<버전>`에 새 폴더로 풀어 scrcpy.exe와 adb.exe(동봉) 경로를 설정에 저장. 같은 폴더가 있으면 덮어쓰지 않음.
 - 소리 탭에 **PC 마이크 → 폰** 추가: 고른 PC 녹음 장치 소리를 폰 마이크 대신 넣음(scrcpy PR #7004 수정판으로만 실행, 공식 scrcpy 실행은 그대로). 수정판 폴더의 다른 버전 adb가 공용 adb 서버를 재시작시키지 않도록 앱의 adb를 `ADB`로 지정. 실제 폰(S23 Ultra, Android 16)에서 녹음 종류 6가지·삼성 녹음 앱·Gemini 음성 명령 주입과 종료 후 내장 마이크 복귀 확인. 수정판 빌드·받아쓰기(로컬 Whisper) 시험 도구는 `scripts/pc-mic/`, 계획은 `docs/plans/2026-11-21-pc-mic-to-phone.md`.
 
 - 휴대폰 알림을 Windows 11 알림 팝업으로 표시(상단 **휴대폰 알림 받기**). 팝업을 누르면 그 앱을 가상 디스플레이의 별도 scrcpy 창으로 열고, 알림이 가리키는 화면(예: 해당 대화)으로 이동. 창 크기·화질은 현재 GUI 설정·프리셋을 따름.

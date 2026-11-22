@@ -23,14 +23,13 @@ $mobile.Replace('../app/android/BlinkLink-0.5.0-debug.apk','BlinkLink-0.5.0-debu
 scrcpy 설정 GUI v$Version / Blink Link Android 0.5.0
 
 1. ZIP 전체를 새 폴더에 풉니다.
-2. 공식 scrcpy Windows 배포본을 별도로 준비합니다: https://github.com/Genymobile/scrcpy/releases/latest
-3. ScrcpyGui.exe를 실행하고 설정에서 scrcpy.exe/adb.exe 위치를 지정합니다.
+2. ScrcpyGui.exe를 실행하고 설정 탭의 '공식 최신 버전 설치'를 누르면 공식 scrcpy와 adb가 설치됩니다. (직접 받았다면 설정에서 scrcpy.exe/adb.exe 위치를 지정)
 4. 휴대폰을 페어링/연결하고 새 창 실행을 누릅니다.
 5. Blink Link는 상단 'Blink Link 설정' → 대상 선택 → '이 휴대폰에 설치 · 권한 설정'으로 준비합니다.
 
 PC 설명서: scrcpy-install-guide.html
 휴대폰 설명서: android/BlinkLink-guide.html
-.NET과 Blink Link APK는 PC 실행 파일에 포함됩니다. scrcpy/adb 자체는 포함하지 않습니다.
+.NET과 Blink Link APK는 PC 실행 파일에 포함됩니다. scrcpy/adb 자체는 포함하지 않고 앱이 공식 릴리스에서 내려받습니다.
 기존 사용자는 개인 설정 JSON을 보존하세요. APK는 개발 서명 개인 시험 버전입니다.
 삼성 실기·절전·실제 음성 출력은 별도 검증 범위입니다.
 "@|Set-Content -LiteralPath (Join-Path $stage 'README.txt') -Encoding utf8

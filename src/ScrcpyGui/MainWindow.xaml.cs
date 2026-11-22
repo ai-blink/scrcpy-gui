@@ -326,6 +326,14 @@ public partial class MainWindow : Window
                 panel.Children.Add(path);
                 Grid.SetColumn(browse, 1);
                 panel.Children.Add(browse);
+                if (definition.Key == "scrcpyPath")
+                {
+                    panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    var install = new Button { Content = "공식 최신 버전 설치", Margin = new Thickness(8, 0, 0, 0), ToolTip = "공식 scrcpy(adb 포함)를 C:\\app에 설치합니다." };
+                    install.Click += (_, _) => InstallOfficialScrcpy();
+                    Grid.SetColumn(install, 2);
+                    panel.Children.Add(install);
+                }
                 control = panel;
                 _controls[definition.Key] = path;
                 return control;
