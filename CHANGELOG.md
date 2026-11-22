@@ -1,5 +1,11 @@
 # 변경 기록
 
+## v0.5.2 — 2026-11-22
+
+PC 0.5.2 / Android(Blink Link) 0.5.0
+
+- 무선 페어링이 실패했을 때 adb 37의 `protocol fault (couldn't read status message)`만 보이던 것을 고침. `adb.log`에서 그 시도의 실제 원인을 읽어 폰의 IP:포트·코드, 같은 Wi-Fi, Windows 방화벽의 adb.exe 허용 확인을 한국어로 안내(방화벽 허용 후 재접속으로 해결된 사례 기반).
+
 ## v0.5.1 — 2026-11-22
 
 PC 0.5.1 / Android(Blink Link) 0.5.0

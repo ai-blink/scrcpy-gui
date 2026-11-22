@@ -365,6 +365,33 @@ public partial class MainWindow : Window
         UpdatePreview();
     }
 
+    // adb 37의 'protocol fault'는 실제 원인을 숨긴다. 실제 원인은 adb.log의 pairing_client 줄에만 남는다.
+    private static string ExplainPairFailure(DateTime since)
+    {
+        string? logLine = null;
+        try
+        {
+            var log = Path.Combine(Path.GetTempPath(), "adb.log");
+            using var stream = new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+            var lines = new List<string>();
+            while (reader.ReadLine() is { } text) lines.Add(text);
+            logLine = Enumerable.Reverse(lines).Take(40)
+                .FirstOrDefault(line => line.Contains("pairing_client.cpp") && line.Contains(" E ")
+                    && line.Length >= 18 && DateTime.TryParseExact(line[..18], "MM-dd HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var at) && at >= since);
+        }
+        catch { }
+
+        var hint = logLine switch
+        {
+            not null when logLine.Contains("10061") || logLine.Contains("10060") || logLine.Contains("cannot connect") =>
+                "폰에 연결하지 못했습니다. ① 폰의 «페어링 코드로 기기 페어링» 창에 뜬 IP:포트를 그대로 입력했는지(창을 닫으면 포트가 바뀝니다) ② 폰과 PC가 같은 Wi-Fi인지 ③ Windows 방화벽이 adb.exe를 막고 있지 않은지 확인하세요.",
+            not null => "페어링 코드가 틀렸거나 만료됐을 수 있습니다. 폰의 페어링 창을 다시 열어 새 코드로 시도하세요.",
+            _ => "원인을 로그에서 찾지 못했습니다. 폰의 페어링 창 IP:포트·6자리 코드, 같은 Wi-Fi, Windows 방화벽의 adb.exe 허용을 확인하세요.",
+        };
+        return hint;
+    }
+
     private void SaveConfiguredPaths()
     {
         _config["scrcpyPath"] = ReadText("scrcpyPath");
@@ -826,6 +853,7 @@ public partial class MainWindow : Window
                 return;
             }
             pair.IsEnabled = false;
+            var pairStarted = DateTime.Now.AddSeconds(-2);
             var result = await RunAdbAsync(["pair", endpoint.Text.Trim(), code.Password.Trim()], pairCancellation.Token, TimeSpan.FromSeconds(30));
             if (!dialog.IsVisible) return;
             pair.IsEnabled = true;
@@ -837,7 +865,9 @@ public partial class MainWindow : Window
             }
             else
             {
-                MessageBox.Show(dialog, $"페어링에 실패했습니다.\n\n{(string.IsNullOrWhiteSpace(result.Output) ? "adb pair 명령이 실패했습니다." : result.Output)}", "무선 페어링", MessageBoxButton.OK, MessageBoxImage.Error);
+                var detail = string.IsNullOrWhiteSpace(result.Output) ? "adb pair 명령이 실패했습니다." : result.Output;
+                if (result.Output.Contains("protocol fault", StringComparison.OrdinalIgnoreCase)) detail += "\n\n" + ExplainPairFailure(pairStarted);
+                MessageBox.Show(dialog, $"페어링에 실패했습니다.\n\n{detail}", "무선 페어링", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         };
         actions.Children.Add(cancel);
